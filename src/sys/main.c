@@ -49,6 +49,8 @@ extern void irq12();
 void handleIrq1() { umkaRuntimeHandleIRQ(1); }
 void handleIrq12() { umkaRuntimeHandleIRQ(12); }
 
+void __stack_chk_fail_local() {}
+
 extern void kmain() {
   rtlInit((void *)0x1000000);
   loadVfsImage(_binary_bin_fs_bin_start, "");
