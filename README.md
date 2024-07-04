@@ -1,6 +1,6 @@
 # Umka OS
 
-A proof of concept operating system written in [Umka](https://github.com/vtereskhov/umka-lang). (With blackjack and hookers (maybe just blackjack))
+A proof of concept operating system written in [Umka](https://github.com/vtereshkov/umka-lang). (With blackjack and hookers (maybe just blackjack))
 
 ![Windows in the OS](cover.png)
 
