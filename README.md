@@ -49,7 +49,7 @@ A few basic things had to be implemented, for the most part a simple allocator a
 After that was done, I implemented the formatting functions (which took me longer than I expected.)
 
 When it came to the OS, I scraped some of my old code, found my old bootloader, fixed it, and booted into Umka.
-And it didn't go all that smooth, there was a lot of trouble. I'm going to need to write a dedicated post for that later. This took me about a week to make this, it's a bit rushed, but it works.
+And it didn't go all that smooth, there was a lot of trouble. I'm going to need to write a dedicated post for that later. This took me about a week to make, it's a bit rushed, but it works.
 
 # Technology 
 
