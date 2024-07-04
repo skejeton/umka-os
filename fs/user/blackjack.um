@@ -65,10 +65,10 @@ fn generateDeck(): [52]Card {
     return deck
 }
 
-fn shuffleDeck(deck: [52]^Card) {
-    for i := 0; i < 52; i++ {
-        j := tasks::rand()%52
-        deck[i]^, deck[j]^ = deck[j]^, deck[i]^
+fn shuffleDeck(deck: ^[]^Card) {
+    for i := 0; i < len(deck^); i++ {
+        j := tasks::rand()%len(deck^)
+        deck[i], deck[j] = deck[j], deck[i]
     }
 }
 
@@ -167,7 +167,7 @@ fn drawCard(inst: ^BlackjackInstance): ^Card {
     if len(inst.hand) == 0 {
         inst.hand = inst.stash
         inst.stash = {}
-        shuffleDeck(inst.hand)
+        shuffleDeck(&inst.hand)
     }
 
     card := inst.hand[0]
@@ -333,7 +333,7 @@ fn register*() {
             for i, card^ in inst.deck {
                 inst.hand = append(inst.hand, card)
             }
-            shuffleDeck(inst.hand)
+            shuffleDeck(&inst.hand)
         }
 
         inst := ^BlackjackInstance(task.data)
