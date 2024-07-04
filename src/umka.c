@@ -1,0 +1,15 @@
+#include "umka_api.c"
+#include "umka_common.c"
+#include "umka_compiler.c"
+#include "umka_const.c"
+#include "umka_decl.c"
+#include "umka_expr.c"
+#include "umka_gen.c"
+#include "umka_ident.c"
+#include "umka_lexer.c"
+#include "umka_runtime.c"
+#include "umka_stmt.c"
+#define spelling spellingtypes
+#include "umka_types.c"
+#undef spelling
+#include "umka_vm.c"

@@ -1,0 +1,22 @@
+import (
+    "tasks.um"
+)
+
+fn register*() {
+    tasks::createClass("Taskview", {
+        sw := ctx.getCurrentContainer().body.w - 100
+        ctx.layoutRow({sw, -1}, 20)
+        for i, task^ in tasks::tasks {
+            ctx.pushId({i})
+            ctx.label(sprintf("%s #%d", task.name, i))
+            if task.noClose {
+                ctx.label("")
+            } else if ctx.button("Kill") == .Submit {
+                task.dead = true
+            }
+            ctx.popId()
+        }
+
+        return true
+    })
+}

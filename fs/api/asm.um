@@ -1,0 +1,29 @@
+fn api__asm_in8(port: uint16): uint8
+fn api__asm_out8(port: uint16, data: uint8)
+fn api__asm_lidt(addr: ^void, limit: uint16)
+fn api__asm_sti()
+fn api__asm_cli()
+
+fn in8*(port: uint16): uint8 {
+    return api__asm_in8(port)
+}
+
+fn out8*(port: uint16, data: uint8) {
+    api__asm_out8(port, data)
+}
+
+fn lidt*(addr: ^void, limit: uint16) {
+    api__asm_lidt(addr, limit)
+}
+
+fn sti*() {
+    api__asm_sti()
+}
+
+fn cli*() {
+    api__asm_cli()
+}
+
+fn iowait*() {
+    out8(0x80, 0)
+}

@@ -1,0 +1,24 @@
+import (
+    "tasks.um"
+)
+
+offs := 0
+
+fn register*() {
+    tasks::createClass("Progman", {
+        sw := trunc(ctx.getCurrentContainer().body.w * 0.5)
+
+        ctx.layoutRow({sw, -1}, 40)
+        for i, _ in tasks::classes {
+            if ctx.button(i) == .Submit {
+                tasks::createTask(i, {offs, offs, 400, 305})
+                offs += 50
+                if offs > 500 {
+                    offs = 0
+                }
+            }
+        }
+
+        return true
+    })
+}

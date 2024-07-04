@@ -1,0 +1,1293 @@
+import ( "std.um" )
+
+const VERSION* = "0.1.0"
+
+const ROOTLIST_SIZE*       = 32
+const CONTAINERSTACK_SIZE* = 32
+const CLIPSTACK_SIZE*      = 32
+const IDSTACK_SIZE*        = 32
+const RETAINEDPOOL_SIZE*   = 48
+
+const REAL_FMT* = "%.3g"
+const SLIDER_FMT* = "%.2f"
+
+type (
+    Id* = uint
+    Font* = any
+    Real* = real
+)
+
+fn min*(a, b: int): int { return a < b ? a : b }
+fn max*(a, b: int): int { return a > b ? a : b }
+fn clamp*(x, a, b: Real): Real { return x < a ? a : x > b ? b : x }
+
+type ClipState* = enum { None; Part; All }
+
+type ControlColor* = enum {
+    Text
+    Border
+    WindowBG
+    TitleBG
+    TitleText
+    PanelBG
+    Button
+    ButtonHover
+    ButtonFocus
+    Base
+    BaseHover
+    BaseFocus
+    ScrollBase
+    ScrollThumb
+    Max
+}
+
+type Icon* = enum {
+    None
+    Close
+    Check
+    Collapsed
+    Expanded
+    Max
+}
+
+type Cursor* = enum {
+    None
+    Arrow
+    Hand
+    Size
+    IBeam
+}
+
+type Result* = enum {
+    Nothing = 0
+    Active  = 1 << 0
+    Submit  = 1 << 1
+    Change  = 1 << 2
+}
+
+fn (r: ^Result) set*(b: Result) { ^int(r)^ |= int(b) }
+fn (r: ^Result) has*(b: Result): bool { return int(r^) & int(b) != 0 }
+
+type Option* = enum {
+    None        = 0
+    AlignCenter = 1 << 0
+    AlignRight  = 1 << 1
+    NoInteract  = 1 << 2
+    NoFrame     = 1 << 3
+    NoResize    = 1 << 4
+    NoScroll    = 1 << 5
+    NoClose     = 1 << 6
+    NoTitle     = 1 << 7
+    HoldFocus   = 1 << 8
+    AutoSize    = 1 << 9
+    Popup       = 1 << 10
+    Closed      = 1 << 11
+    Expanded    = 1 << 12
+}
+
+fn (o: ^Option) has*(opt: Option): bool { return int(o^) & int(opt) != 0 }
+
+fn optAnd*(o: ..Option): Option {
+    std::assert(len(o) >= 2)
+    i := 0
+    for _, p^ in o { i |= int(p^) }
+    return Option(i)
+}
+
+fn (o: ^Option) and*(opt: ..Option): Option {
+    return optAnd(append(opt, o^))
+}
+
+type MouseButton* = enum {
+    None   = 0
+    Left   = 1 << 0
+    Right  = 1 << 1
+    Middle = 1 << 2
+}
+
+fn (m: ^MouseButton) set*(b: MouseButton) { ^int(m)^ |= int(b) }
+fn (m: ^MouseButton) unset*(b: MouseButton) { ^int(m)^ &= ~int(b) }
+fn (m: ^MouseButton) has*(b: MouseButton): bool { return int(m^) & int(b) != 0 }
+fn (m: ^MouseButton) is*(b: MouseButton): bool { return int(m^) == int(b) }
+fn (m: ^MouseButton) any*(): bool { return int(m^) != 0 }
+
+type KeyboardKey* = enum {
+    None      = 0
+    Shift     = 1 << 0
+    Ctrl      = 1 << 1
+    Alt       = 1 << 2
+    Backspace = 1 << 3
+    Return    = 1 << 4
+}
+
+fn (k: ^KeyboardKey) set*(b: KeyboardKey) { ^int(k)^ |= int(b) }
+fn (k: ^KeyboardKey) unset*(b: KeyboardKey) { ^int(k)^ &= ~int(b) }
+fn (k: ^KeyboardKey) has*(b: KeyboardKey): bool { return int(k^) & int(b) != 0 }
+fn (k: ^KeyboardKey) is*(b: KeyboardKey): bool { return int(k^) == int(b) }
+fn (k: ^KeyboardKey) any*(): bool { return int(k^) != 0 }
+
+type (
+    Vec2*  = struct { x, y      :  int  }
+    Rect*  = struct { x, y, w, h:  int  }
+    Color* = struct { r, g, b, a: uint8 }
+)
+
+type (
+    Command*       = interface { _cmd() }
+    JumpCommand*   = struct { dst: uint }
+    ClipCommand*   = struct { rect: Rect }
+    RectCommand*   = struct { rect: Rect; color: Color }
+    TextCommand*   = struct { font: Font; pos: Vec2; color: Color; text: str }
+    IconCommand*   = struct { rect: Rect; id: Icon; color: Color }
+    CursorCommand* = struct { id: Cursor }
+)
+
+fn (_: ^JumpCommand)   _cmd() { std::assert(false) }
+fn (_: ^ClipCommand)   _cmd() { std::assert(false) }
+fn (_: ^RectCommand)   _cmd() { std::assert(false) }
+fn (_: ^TextCommand)   _cmd() { std::assert(false) }
+fn (_: ^IconCommand)   _cmd() { std::assert(false) }
+fn (_: ^CursorCommand) _cmd() { std::assert(false) }
+
+type (
+    LayoutNextType* = enum { None; Absolute; Relative }
+
+    Layout* = struct {
+        body, next: Rect
+        position, size, max: Vec2
+        widths: []int
+        itemIndex: int
+        nextRow: int
+        nextType: LayoutNextType
+        indent: int
+    }
+)
+
+type Container* = struct {
+    head, tail: uint // Command list indexes
+    rect, body: Rect
+    contentSize, scroll: Vec2
+    zindex: int
+    open: bool
+}
+
+type Style* = struct {
+    font: Font
+    size: Vec2
+    padding, spacing, indent: int
+    titleHeight: int
+    scrollbarSize, thumbSize: int
+    colors: [uint(ControlColor.Max)]Color
+}
+
+fn (s: ^Style) getColor(c: ControlColor): Color { return s.colors[uint(c)] }
+
+type (
+    PoolItem = struct { id: Id; lastUpdate: int }
+    Pool = [RETAINEDPOOL_SIZE]PoolItem
+
+    TextWidthFn*  = fn (font: Font, text: str): uint
+    TextHeightFn* = fn (font: Font): uint
+    DrawFrameFn*  = fn (ctx: ^Context, rect: Rect, colorid: ControlColor)
+
+    FixedStack = struct { items: []any; idx: uint }
+
+    Context* = struct {
+        textWidth: TextWidthFn
+        textHeight: TextHeightFn
+        drawFrame: DrawFrameFn
+
+        _style: Style
+        style: ^Style
+        hover, focus: Id
+        lastId: Id
+        lastRect: Rect
+        lastZIndex: int
+        updatedFocus: bool
+        frame: uint
+        hoverRoot, nextHoverRoot: ^Container
+        scrollTarget: ^Container
+        numberEditBuf: str
+        numberEdit: Id
+        lastCursor: Cursor
+
+        commandList: []Command
+        rootList: FixedStack // [ROOTLIST_SIZE]weak ^Container
+        containerStack: FixedStack // [CONTAINERSTACK_SIZE]weak ^Container
+        clipStack: FixedStack // [CLIPSTACK_SIZE]Rect
+        idStack: FixedStack // [IDSTACK_SIZE]Id
+        layoutStack: []Layout
+
+        containerPool, treenodePool: Pool
+        containers: [RETAINEDPOOL_SIZE]Container
+
+        mousePos, lastMousePos: Vec2
+        mouseDelta, scrollDelta: Vec2
+
+        mouseDown, mousePressed: MouseButton
+        keyDown, keyPressed: KeyboardKey
+        inputText: str
+    }
+)
+
+fn (s: ^FixedStack) init(l: uint) {
+    s.items = make([]any, l)
+    s.idx = 0
+}
+
+fn (s: ^FixedStack) push(val: any) {
+    std::assert(valid(s.items), "invalid stack")
+    std::assert(s.idx < len(s.items))
+    s.items[s.idx] = val
+    s.idx++
+}
+
+fn (s: ^FixedStack) pop() {
+    std::assert(valid(s.items), "invalid stack")
+    s.idx--
+}
+
+fn (s: ^FixedStack) size(): uint {
+    std::assert(valid(s.items), "invalid stack")
+    return s.idx
+}
+
+const unclippedRect = Rect { 0, 0, 0x1000000, 0x1000000 }
+
+const defaultStyle = Style {
+  // font | size | padding | spacing | indent
+  null, { 68, 10 }, 5, 4, 24,
+  // title_height | scrollbar_size | thumb_size
+  24, 12, 8,
+  {
+    { 230, 230, 230, 255 }, // Text
+    { 25,  25,  25,  255 }, // Border
+    { 50,  50,  50,  255 }, // WindowBG
+    { 25,  25,  25,  255 }, // TitleBG
+    { 240, 240, 240, 255 }, // TitleText
+    { 0,   0,   0,   0   }, // PanelBG
+    { 75,  75,  75,  255 }, // Button
+    { 95,  95,  95,  255 }, // ButtonHover
+    { 115, 115, 115, 255 }, // ButtonFocus
+    { 30,  30,  30,  255 }, // Base
+    { 35,  35,  35,  255 }, // BaseHover
+    { 40,  40,  40,  255 }, // BaseFocus
+    { 43,  43,  43,  255 }, // ScrollBase
+    { 30,  30,  30,  255 }  // ScrollThumb
+  }
+}
+
+fn (r: ^Rect) expanded(n: uint): Rect {
+    return {
+        r.x - n, r.y - n,
+        r.w + n * 2, r.h + n * 2
+    }
+}
+
+fn (r1: ^Rect) intersectedWith(r2: Rect): Rect {
+    x1 := max(r1.x, r2.x)
+    y1 := max(r1.y, r2.y)
+    x2 := min(r1.x + r1.w, r2.x + r2.w)
+    y2 := min(r1.y + r1.h, r2.y + r2.h)
+    if x2 < x1 { x2 = x1 }
+    if y2 < y1 { y2 = y1 }
+    return { x1, y1, x2 - x1, y2 - y1 }
+}
+
+fn (r: ^Rect) overlaps(p: Vec2): bool {
+    return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
+}
+
+fn poolGet(items: ^Pool, length: int, id: Id): int {
+    for i := 0; i < length; i++ {
+        if items[i].id == id { return i }
+    }
+    return -1
+}
+
+fn poolUpdate(ctx: ^Context, items: ^Pool, idx: int) {
+    items[idx].lastUpdate = ctx.frame
+}
+
+fn poolInit(ctx: ^Context, items: ^Pool, length: int, id: Id): int {
+    n, f := -1, ctx.frame
+    for i := 0; i < len(items^); i++ {
+        if items[i].lastUpdate < f {
+            f, n = items[i].lastUpdate, i
+        }
+    }
+
+    std::assert(n > -1)
+    items[n].id = id
+    poolUpdate(ctx, items, n)
+    return n
+}
+
+fn (ctx: ^Context) drawRect*(rect: Rect, color: Color)
+fn (ctx: ^Context) drawBox* (rect: Rect, color: Color)
+
+fn drawFrame(ctx: ^Context, rect: Rect, colorid: ControlColor) {
+    ctx.drawRect(rect, ctx.style.getColor(colorid))
+
+    if colorid == .ScrollBase  ||
+       colorid == .ScrollThumb ||
+       colorid == .TitleBG     { return; }
+
+    b := &ctx.style.getColor(.Border)
+    if b.a != 0 { ctx.drawBox(rect.expanded(1), b^) }
+}
+
+fn (ctx: ^Context) init*() {
+    ctx.drawFrame = drawFrame
+    ctx._style = defaultStyle
+    ctx.style = &ctx._style
+
+    ctx.commandList = {}
+    ctx.rootList.init(ROOTLIST_SIZE)
+    ctx.containerStack.init(CONTAINERSTACK_SIZE)
+    ctx.clipStack.init(CLIPSTACK_SIZE)
+    ctx.idStack.init(IDSTACK_SIZE)
+    ctx.layoutStack = make([]Layout, 0)
+    ctx.containers = []Container{}
+}
+
+fn (ctx: ^Context) begin*() {
+    std::assert(
+        valid(ctx.textWidth) && valid(ctx.textHeight),
+        "either ctx.textWidth or ctx.textHeight aren't initialized"
+    )
+
+    ctx.commandList = {}
+    ctx.rootList.init(ROOTLIST_SIZE)
+    ctx.scrollTarget = null
+    ctx.hoverRoot = ctx.nextHoverRoot
+    ctx.lastCursor = .None
+    ctx.nextHoverRoot = null
+    ctx.mouseDelta.x = ctx.mousePos.x - ctx.lastMousePos.x
+    ctx.mouseDelta.y = ctx.mousePos.y - ctx.lastMousePos.y
+    ctx.frame++
+}
+
+fn partition(a: FixedStack, lo, hi: int): int {
+    p := ^Container(a.items[hi]).zindex
+    i := lo - 1
+    for j := lo; j < hi; j++ {
+        if ^Container(a.items[j]).zindex < p {
+            i++
+            t := a.items[i]
+            a.items[i] = a.items[j]
+            a.items[j] = t
+        }
+    }
+    t := a.items[i+1]
+    a.items[i+1] = a.items[hi]
+    a.items[hi] = t
+    return i + 1
+}
+
+// Root-list specific, sorts by zindex
+fn qsort(a: FixedStack, lo, hi: int) {
+    if lo < hi {
+        p := partition(a, lo, hi)
+        qsort(a, lo, p-1)
+        qsort(a, p+1, hi)
+    }
+}
+
+fn (ctx: ^Context) bringToFront*(cnt: ^Container)
+
+fn (ctx: ^Context) end*() {
+    std::assert(ctx.containerStack.size() == 0, "container stack isn't empty")
+    std::assert(ctx.clipStack.size()      == 0, "clip stack isn't empty")
+    std::assert(ctx.idStack.size()        == 0, "id stack isn't empty")
+    std::assert(len(ctx.layoutStack)      == 0, "layout stack isn't empty")
+
+    if ctx.scrollTarget != null {
+        ctx.scrollTarget.scroll.x += ctx.scrollDelta.x
+        ctx.scrollTarget.scroll.y += ctx.scrollDelta.y
+    }
+
+    if !ctx.updatedFocus { ctx.focus = 0 }
+    ctx.updatedFocus = false
+
+    if ctx.mousePressed.any() &&
+       ctx.nextHoverRoot != null &&
+       ctx.nextHoverRoot.zindex < ctx.lastZIndex &&
+       ctx.nextHoverRoot.zindex >= 0 {
+        ctx.bringToFront(ctx.nextHoverRoot)
+    }
+
+    ctx.keyPressed = .None
+    ctx.inputText = ""
+    ctx.mousePressed = .None
+    ctx.scrollDelta = { 0, 0 }
+    ctx.lastMousePos = ctx.mousePos
+
+    n := ctx.rootList.size()
+    qsort(ctx.rootList, 0, n-1)
+
+    for i := 0; i < n; i++ {
+        cnt := ^Container(ctx.rootList.items[i])
+        if i == 0 {
+            j := ^JumpCommand(ctx.commandList[0])
+            std::assert(j != null)
+            j.dst = cnt.head + 1
+        } else {
+            prev := ^Container(ctx.rootList.items[i-1])
+            j := ^JumpCommand(ctx.commandList[prev.tail])
+            std::assert(j != null)
+            j.dst = cnt.head + 1
+        }
+
+        if i == n - 1 {
+            j := ^JumpCommand(ctx.commandList[cnt.tail])
+            std::assert(j != null)
+            j.dst = len(ctx.commandList)
+        }
+    }
+}
+
+fn (ctx: ^Context) setFocus*(id: Id) {
+    ctx.focus = id
+    ctx.updatedFocus = true
+}
+
+// *64-bit* fnv-1a hash this time round
+const HASH_INITIAL = 0xcbf29ce484222325
+
+fn hash(h: ^Id, data: []uint8) {
+    for _, b in data { h^ = (h^ ~ b) * 0x00000100000001B3 }
+}
+
+fn (ctx: ^Context) getId*(data: []uint8): Id {
+    idx := ctx.idStack.size()
+    res := idx > 0 ? Id(ctx.idStack.items[idx-1]) : HASH_INITIAL
+    hash(&res, data)
+    ctx.lastId = res
+    return res
+}
+
+fn (ctx: ^Context) getIdFromStr*(s: str): uint { return ctx.getId([]uint8([]char(s))) }
+
+fn (ctx: ^Context) getIdFromPtr*(p: ^void): uint {
+    s := sprintf("%v", p); return ctx.getIdFromStr(s)
+}
+
+fn (ctx: ^Context) pushId*(data: []uint8) { ctx.idStack.push(ctx.getId(data)) }
+fn (ctx: ^Context) pushStr*(s: []char) { ctx.idStack.push(ctx.getIdFromStr(s)) }
+fn (ctx: ^Context) pushPtr*(p: ^void) { ctx.idStack.push(ctx.getIdFromPtr(p)) }
+
+fn (ctx: ^Context) popId*() { ctx.idStack.pop() }
+
+fn (ctx: ^Context) getClipRect*(): Rect
+
+fn (ctx: ^Context) pushClipRect*(rect: Rect) {
+    last := ctx.getClipRect()
+    ctx.clipStack.push(rect.intersectedWith(last))
+}
+
+fn (ctx: ^Context) popClipRect*() { ctx.clipStack.pop() }
+
+fn (ctx: ^Context) getClipRect*(): Rect {
+    return Rect(ctx.clipStack.items[ctx.clipStack.size()-1])
+}
+
+fn (ctx: ^Context) checkClip*(r: Rect): ClipState {
+    cr := ctx.getClipRect()
+
+    if r.x > cr.x + cr.w || r.x + r.w < cr.x ||
+       r.y > cr.y + cr.h || r.y + r.h < cr.y { return .All }
+
+    if r.x >= cr.x && r.x + r.w <= cr.x + cr.w &&
+       r.y >= cr.y && r.y + r.h <= cr.y + cr.h { return .None }
+
+    return .Part
+}
+
+fn (ctx: ^Context) layoutRow*(widths: []int, height: int)
+
+fn (ctx: ^Context) pushLayout(body: Rect, scroll: Vec2) {
+    var layout: Layout
+    width := []int{0}
+    layout.body = { body.x - scroll.x, body.y - scroll.y, body.w, body.h }
+    layout.max = { -0x1000000, -0x1000000 }
+    ctx.layoutStack = append(ctx.layoutStack, layout)
+    ctx.layoutRow(width, 0)
+}
+
+fn (ctx: ^Context) getLayout(): ^Layout {
+    return &ctx.layoutStack[min(len(ctx.layoutStack)-1, 0)]
+}
+
+fn (ctx: ^Context) getCurrentContainer*(): ^Container
+
+fn (ctx: ^Context) popContainer() {
+    cnt := ctx.getCurrentContainer()
+    layout := ctx.getLayout()
+    cnt.contentSize.x = layout.max.x - layout.body.x
+    cnt.contentSize.y = layout.max.y - layout.body.y
+    // pop container, layout and id
+    ctx.containerStack.pop()
+    ctx.layoutStack = delete(ctx.layoutStack, len(ctx.layoutStack)-1)
+    ctx.popId()
+}
+
+
+fn (ctx: ^Context) getCurrentContainer*(): ^Container {
+    std::assert(ctx.containerStack.size() > 0)
+    return &Container(ctx.containerStack.items[ctx.containerStack.size()-1])
+}
+
+fn (ctx: ^Context) getContainer_(id: Id, opt: Option): ^Container {
+    idx := poolGet(&ctx.containerPool, len(ctx.containerPool), id)
+    if idx >= 0 {
+        if ctx.containers[idx].open || !opt.has(.Closed) {
+            poolUpdate(ctx, &ctx.containerPool, idx)
+        }
+
+        return &ctx.containers[idx]
+    }
+
+    if opt.has(.Closed) { return null }
+    idx = poolInit(ctx, &ctx.containerPool, len(ctx.containerPool), id)
+    cnt := &ctx.containers[idx]
+    cnt.head, cnt.tail = 0, 0
+    cnt.rect, cnt.body = {}, {}
+    cnt.contentSize = {}
+    cnt.scroll = {}
+    cnt.zindex = 0
+    cnt.open = true
+    ctx.bringToFront(cnt)
+    return cnt
+}
+
+fn (ctx: ^Context) getContainer*(name: str): ^Container {
+    id := ctx.getIdFromStr(name)
+    return ctx.getContainer_(id, .None)
+}
+
+fn (ctx: ^Context) bringToFront*(cnt: ^Container) {
+    ctx.lastZIndex++
+    cnt.zindex = ctx.lastZIndex
+}
+
+/*================**
+** Input handlers **
+**================*/
+
+fn (ctx: ^Context) input_mouseMove*(x, y: int) { ctx.mousePos = { x, y } }
+
+fn (ctx: ^Context) input_mouseDown*(x, y: int, btn: MouseButton) {
+    ctx.input_mouseMove(x, y)
+    ctx.mouseDown.set(btn)
+    ctx.mousePressed.set(btn)
+}
+
+fn (ctx: ^Context) input_mouseUp*(x, y: int, btn: MouseButton) {
+    ctx.input_mouseMove(x, y)
+    ctx.mouseDown.unset(btn)
+}
+
+fn (ctx: ^Context) input_scroll*(x, y: int) {
+    ctx.scrollDelta.x += x
+    ctx.scrollDelta.y += y
+}
+
+fn (ctx: ^Context) input_keyDown*(key: KeyboardKey) {
+    ctx.keyPressed.set(key)
+    ctx.keyDown.set(key)
+}
+
+fn (ctx: ^Context) input_keyUp*(key: KeyboardKey) {
+    ctx.keyDown.unset(key)
+}
+
+fn (ctx: ^Context) input_text*(text: str) { ctx.inputText += text }
+
+/*==============**
+** Command list **
+**==============*/
+
+fn (ctx: ^Context) nextCommand*(idx: uint = 0): (^Command, uint) {
+    l := len(ctx.commandList)
+
+    for idx < l {
+        cmd := &ctx.commandList[idx]
+        j := ^JumpCommand(cmd^)
+        if j == null { return cmd, idx + 1 }
+        idx = j.dst
+    }
+
+    return null, idx
+}
+
+fn (ctx: ^Context) pushJump(dst: int): uint {
+    i := len(ctx.commandList)
+    ctx.commandList = append(ctx.commandList, JumpCommand { dst })
+    return i
+}
+
+fn (ctx: ^Context) setClip*(rect: Rect) {
+    ctx.commandList = append(ctx.commandList, ClipCommand { rect })
+}
+
+fn (ctx: ^Context) drawRect*(rect: Rect, color: Color) {
+    rect = rect.intersectedWith(ctx.getClipRect())
+    if rect.w > 0 && rect.h > 0 {
+        ctx.commandList = append(ctx.commandList, RectCommand { rect, color })
+    }
+}
+
+fn (ctx: ^Context) drawBox*(rect: Rect, color: Color) {
+    ctx.drawRect({ rect.x + 1, rect.y, rect.w - 2, 1 }, color)
+    ctx.drawRect({ rect.x + 1, rect.y + rect.h - 1, rect.w - 2, 1 }, color)
+    ctx.drawRect({ rect.x, rect.y, 1, rect.h }, color)
+    ctx.drawRect({ rect.x + rect.w - 1, rect.y, 1, rect.h }, color)
+}
+
+fn (ctx: ^Context) drawText*(font: Font, text: str, pos: Vec2, color: Color) {
+    rect := Rect { pos.x, pos.y, ctx.textWidth(font, text), ctx.textHeight(font) }
+    clipped := ctx.checkClip(rect)
+    if clipped == .All { return }
+    if clipped == .Part { ctx.setClip(ctx.getClipRect()) }
+    ctx.commandList = append(ctx.commandList, TextCommand { font, pos, color, text })
+    if clipped != .None { ctx.setClip(unclippedRect) }
+}
+
+fn (ctx: ^Context) drawIcon*(id: Icon, rect: Rect, color: Color) {
+    clipped := ctx.checkClip(rect)
+    if clipped == .All { return }
+    if clipped == .Part { ctx.setClip(ctx.getClipRect())}
+    ctx.commandList = append(ctx.commandList, IconCommand { rect, id, color })
+    if clipped != .None { ctx.setClip(unclippedRect) }
+}
+
+fn (ctx: ^Context) setCursor*(c: Cursor) {
+    if ctx.lastCursor == c {
+        ctx.lastCursor = .None
+        return
+    }
+
+    ctx.commandList = append(ctx.commandList, CursorCommand { c })
+    ctx.lastCursor = c
+}
+
+/*========**
+** layout **
+**========*/
+
+fn (ctx: ^Context) layoutNext*(): Rect
+
+fn (ctx: ^Context) layoutBeginColumn*() {
+    ctx.pushLayout(ctx.layoutNext(), { 0, 0 })
+}
+
+fn (ctx: ^Context) layoutEndColumn*() {
+    b := ctx.getLayout()
+    ctx.layoutStack = delete(ctx.layoutStack, len(ctx.layoutStack)-1)
+    a := ctx.getLayout()
+    a.position.x = max(a.position.x, b.position.x + b.body.x - a.body.x)
+    a.position.y = max(a.position.y, b.position.y + b.body.y - a.body.y)
+    a.max.x = max(a.max.x, b.max.x)
+    a.max.y = max(a.max.y, b.max.y)
+}
+
+fn (ctx: ^Context) layoutRow*(widths: []int, height: int) {
+    layout := ctx.getLayout()
+    if len(widths) != 0 { layout.widths = widths }
+    layout.position = { layout.indent, layout.nextRow }
+    layout.size.y = height
+    layout.itemIndex = 0
+}
+
+fn (ctx: ^Context) layoutWidth* (width:  int) { ctx.getLayout().size.x = width  }
+fn (ctx: ^Context) layoutHeight*(height: int) { ctx.getLayout().size.y = height }
+
+fn (ctx: ^Context) layoutSetNext*(r: Rect, relative: bool = false) {
+    layout := ctx.getLayout()
+    layout.next = r
+    layout.nextType = relative ? LayoutNextType.Relative : LayoutNextType.Absolute
+}
+
+fn (ctx: ^Context) layoutNext*(): Rect {
+    layout := ctx.getLayout()
+    style := ctx.style
+    var res: Rect
+
+    if layout.nextType != .None {
+        nextType := layout.nextType
+        layout.nextType = .None
+        res = layout.next
+        if nextType == .Absolute {
+            ctx.lastRect = res
+            return res
+        }
+    } else {
+        if layout.itemIndex == len(layout.widths) {
+            ctx.layoutRow({}, layout.size.y)
+        }
+
+        res.x = layout.position.x
+        res.y = layout.position.y
+
+        res.w = len(layout.widths) > 0 ? layout.widths[layout.itemIndex] : layout.size.x
+        res.h = layout.size.y
+        if res.w == 0 { res.w = style.size.x + style.padding * 2 }
+        if res.h == 0 { res.h = style.size.y + style.padding * 2 }
+        if res.w <  0 { res.w += layout.body.w - res.x + 1 }
+        if res.h <  0 { res.h += layout.body.h - res.y + 1 }
+
+        layout.itemIndex++
+    }
+
+    layout.position.x += res.w + style.spacing
+    layout.nextRow = max(layout.nextRow, res.y + res.h + style.spacing)
+
+    res.x += layout.body.x
+    res.y += layout.body.y
+
+    layout.max.x = max(layout.max.x, res.x + res.w)
+    layout.max.y = max(layout.max.y, res.y + res.h)
+
+    ctx.lastRect = res
+    return res
+}
+
+/*==========**
+** controls **
+**==========*/
+
+fn (ctx: ^Context) inHoverRoot(): bool {
+    length := ctx.containerStack.size()
+    for i := 0; i < length; i++ {
+        c := ^Container(ctx.containerStack.items[length - i - 1])
+        if c == ctx.hoverRoot { return true }
+        /* only root containers have their `head` field set; stop searching if we've
+        ** reached the current root container */
+        if c.head != -1 { break }
+    }
+    return false
+}
+
+fn (c: ^ControlColor) offsetByState(ctx: ^Context, id: Id): ControlColor {
+    switch c^ {
+        case .Button:
+            return ctx.focus == id ? ControlColor.ButtonFocus :
+                   ctx.hover == id ? ControlColor.ButtonHover :
+                   ControlColor.Button
+
+        case .Base:
+            return ctx.focus == id ? ControlColor.BaseFocus :
+                   ctx.hover == id ? ControlColor.BaseHover :
+                   ControlColor.Base
+    }
+
+    return c^
+}
+
+fn (ctx: ^Context) drawControlFrame*(id: Id, rect: Rect, colorid: ControlColor, opt: Option) {
+    if opt.has(.NoFrame) { return }
+    ctx.drawFrame(ctx, rect, colorid.offsetByState(ctx, id))
+}
+
+fn (ctx: ^Context) drawControlText*(text: str, rect: Rect, colorid: ControlColor, opt: Option) {
+    var pos: Vec2
+    font := ctx.style.font
+    tw := ctx.textWidth(font, text)
+    ctx.pushClipRect(rect)
+    pos.y = rect.y + (rect.h - ctx.textHeight(font)) / 2
+
+    if opt.has(.AlignCenter) {
+        pos.x = rect.x + (rect.w - tw) / 2
+    } else if opt.has(.AlignCenter) {
+        pos.x = rect.x + rect.w - tw - ctx.style.padding
+    } else {
+        pos.x = rect.x + ctx.style.padding
+    }
+
+    ctx.drawText(font, text, pos, ctx.style.getColor(colorid))
+    ctx.popClipRect()
+}
+
+fn (ctx: ^Context) mouseOver(rect: Rect): bool {
+    return rect.overlaps(ctx.mousePos) &&
+           ctx.getClipRect().overlaps(ctx.mousePos) &&
+           ctx.inHoverRoot()
+}
+
+fn (ctx: ^Context) updateControl*(id: Id, rect: Rect, opt: Option) {
+    mouseover := ctx.mouseOver(rect)
+
+    if ctx.focus == id { ctx.updatedFocus = true }
+    if opt.has(.NoInteract) { return }
+    if mouseover && !ctx.mouseDown.any() { ctx.hover = id }
+
+    if ctx.focus == id {
+        if ctx.mousePressed.any() && !mouseover { ctx.setFocus(0) }
+        if !ctx.mouseDown.any() && !opt.has(.HoldFocus) { ctx.setFocus(0) }
+    }
+
+    if ctx.hover == id {
+        if ctx.mousePressed.any() {
+            ctx.setFocus(id)
+        } else if !mouseover {
+            ctx.hover = 0
+        }
+    }
+}
+
+fn (ctx: ^Context) text*(text: str) {
+    p := 0
+    font := ctx.style.font
+    color := ctx.style.colors[uint(ControlColor.Text)]
+    ctx.layoutBeginColumn()
+    ctx.layoutRow([]int{-1}, ctx.textHeight(font))
+    for true {
+        r := ctx.layoutNext()
+        w, start, end := 0, p, p
+        for true {
+            word := p
+            for p < len(text) && text[p] != ' ' && text[p] != '\n' { p++ }
+            w += ctx.textWidth(font, slice(text, word, p))
+            if w > r.w && end != start { break }
+            if p < len(text) { w += ctx.textWidth(font, text[p]) }
+            end = p
+            p++
+            if end >= len(text) || text[end] == '\n' { break }
+        }
+
+        ctx.drawText(font, slice(text, start, end), { r.x, r.y }, color)
+        p = end + 1
+        if end >= len(text) { break }
+    }
+    ctx.layoutEndColumn()
+}
+
+fn (ctx: ^Context) label*(text: str) {
+    ctx.drawControlText(text, ctx.layoutNext(), .Text, .None)
+}
+
+fn (ctx: ^Context) button*(label: str,
+    icon: Icon = .None, opt: Option = .AlignCenter): Result {
+    res := Result.Nothing
+    id := label != "" ? ctx.getIdFromStr(label) :
+                  ctx.getId([]uint8{uint8(icon)}) // temporary
+    r := ctx.layoutNext()
+
+    ctx.updateControl(id, r, opt)
+    if ctx.hover == id { ctx.setCursor(.Hand) }
+    if ctx.mousePressed.is(.Left) && ctx.focus == id { res.set(.Submit) }
+
+    ctx.drawControlFrame(id, r, .Button, opt)
+    if label != "" { ctx.drawControlText(label, r, .Text, opt) }
+    if icon == .None { ctx.drawIcon(icon, r, ctx.style.getColor(.Text)) }
+    return res
+}
+
+fn (ctx: ^Context) checkbox*(label: str, state: ^bool): Result {
+    res := Result.Nothing
+    id := ctx.getIdFromPtr(state)
+    r := ctx.layoutNext()
+    box := Rect { r.x, r.y, r.h, r.h }
+    ctx.updateControl(id, r, .None)
+
+    if ctx.mousePressed.is(.Left) && ctx.focus == id {
+        res.set(.Change)
+        state^ = !state^
+    }
+
+    ctx.drawControlFrame(id, box, .Base, .None)
+    if state^ { ctx.drawIcon(.Check, box, ctx.style.getColor(.Text)) }
+    r = { r.x + box.w, r.y, r.w - box.w, r.h }
+    ctx.drawControlText(label, r, .Text, .None)
+
+    return res
+}
+
+fn (ctx: ^Context) textboxRaw(buf: ^str, bufsz: uint, id: Id, r: Rect, opt: Option): Result {
+    res := Result.Nothing
+
+    ctx.updateControl(id, r, opt.and(.HoldFocus))
+
+    if ctx.hover == id { ctx.setCursor(.IBeam) }
+
+    if ctx.focus == id {
+        l := len(buf^)
+        n := min(bufsz - l - 1, len(ctx.inputText))
+        if n > 0 {
+            buf^ += ctx.inputText
+            res.set(.Change)
+        }
+
+        if ctx.keyPressed.has(.Backspace) && l > 0 {
+            l--
+            for l > 0 && (int(buf^[l]) & 0xc0) == 0x80; l-- {}
+            buf^ = slice(buf^, 0, l)
+            res.set(.Change)
+        }
+
+        if ctx.keyPressed.has(.Return) {
+            ctx.setFocus(0)
+            res.set(.Submit)
+        }
+    }
+
+    ctx.drawControlFrame(id, r, .Base, opt)
+    if ctx.focus == id {
+        color := ctx.style.getColor(.Text)
+        font := ctx.style.font
+        textw := ctx.textWidth(font, buf^)
+        texth := ctx.textHeight(font)
+        ofx := r.w - ctx.style.padding - textw - 1
+        textx := r.x + min(ofx, ctx.style.padding)
+        texty := r.y + (r.h - texth) / 2
+
+        ctx.pushClipRect(r)
+        ctx.drawText(font, buf^, { textx, texty }, color)
+        ctx.drawRect({ textx + textw, texty, 1, texth }, color)
+        ctx.popClipRect()
+    } else {
+        ctx.drawControlText(buf^, r, .Text, opt)
+    }
+
+    return res
+}
+
+fn (ctx: ^Context) numberTextbox(value: ^Real, r: Rect, id: Id): bool {
+    if ctx.mousePressed.is(.Left) && ctx.keyDown.has(.Shift) && ctx.hover == id {
+        ctx.numberEdit = id
+        ctx.numberEditBuf = sprintf(REAL_FMT, value^)
+    }
+
+    if ctx.numberEdit == id {
+        res := ctx.textboxRaw(
+            &ctx.numberEditBuf, 17, // LDBL_DECIMAL_DIG
+            id, r, .None
+        )
+
+        if res.has(.Submit) || ctx.focus != id {
+            value^ = std::atof(ctx.numberEditBuf)
+            ctx.numberEdit = 0
+        } else {
+            return true
+        }
+    }
+
+    return false
+}
+
+fn (ctx: ^Context) textbox*(buf: ^str, bufsz: uint = 0, opt: Option = .None): Result {
+    if bufsz == 0 { bufsz = len(buf^) }
+    id := ctx.getIdFromPtr(&buf)
+    r := ctx.layoutNext()
+    return ctx.textboxRaw(buf, bufsz, id, r, opt)
+}
+
+fn (ctx: ^Context) slider*(value: ^Real, low, high: Real,
+    step: Real = 0, fmt: str = SLIDER_FMT, opt: Option = .AlignCenter): Result {
+    res := Result.Nothing
+
+    last := value^
+    v := last
+
+    id := ctx.getIdFromPtr(value)
+    base := ctx.layoutNext()
+
+    if ctx.numberTextbox(&v, base, id) { return res }
+
+    ctx.updateControl(id, base, opt)
+
+    if ctx.focus == id &&
+       (ctx.mouseDown.is(.Left) || ctx.mousePressed.is(.Left)) {
+        v = low + Real(ctx.mousePos.x - base.x) * (high - low) / Real(base.w)
+        if step != 0 { v = Real(floor((v + step / 2.0) / step) * step) }
+    }
+
+    v = clamp(v, low, high)
+    value^ = v
+    if last != v { res.set(.Change) }
+
+    ctx.drawControlFrame(id, base, .Base, opt)
+    w := ctx.style.thumbSize
+    x := Real(v - low) * Real(base.w - w) / Real(high - low)
+    thumb := Rect { floor(base.x + x), base.y, w, base.h }
+    ctx.drawControlFrame(id, thumb, .Button, opt)
+    ctx.drawControlText(sprintf(fmt, v), base, .Text, opt)
+
+    return res
+}
+
+fn (ctx: ^Context) header_(label: str, istreenode: bool, opt: Option): Result {
+    id := ctx.getIdFromStr(label)
+    idx := poolGet(&ctx.treenodePool, len(ctx.treenodePool), id)
+    ctx.layoutRow([]int{-1}, 0)
+
+    active := idx >= 0
+    expanded := opt.has(.Expanded) ? !active : active
+    r := ctx.layoutNext()
+    ctx.updateControl(id, r, .None)
+
+    active = bool(int(active) ~ int(ctx.mousePressed.is(.Left) && ctx.focus == id))
+    if ctx.hover == id { ctx.setCursor(.Hand) }
+
+    if idx >= 0 {
+        if active {
+            poolUpdate(ctx, &ctx.treenodePool, idx)
+        } else {
+            t := &ctx.treenodePool[idx]
+            t.lastUpdate = 0
+            t.id = 0
+        }
+    } else if active {
+        poolInit(ctx, &ctx.treenodePool, len(ctx.treenodePool), id)
+    }
+
+    if istreenode {
+        if ctx.hover == id { ctx.drawFrame(ctx, r, .ButtonHover) }
+    } else {
+        ctx.drawControlFrame(id, r, .Button, .None)
+    }
+
+    ctx.drawIcon(
+        expanded ? Icon.Expanded : Icon.Collapsed,
+        { r.x, r.y, r.h, r.h },
+        ctx.style.getColor(.Text)
+    )
+
+    r.x += r.h - ctx.style.padding
+    r.w -= r.h - ctx.style.padding
+
+    ctx.drawControlText(label, r, .Text, .None)
+
+    return expanded ? Result.Active : Result.Nothing
+}
+
+fn (ctx: ^Context) header*(label: str, opt: Option = .None): Result {
+    return ctx.header_(label, false, opt)
+}
+
+fn (ctx: ^Context) beginTreenode*(label: str, opt: Option = .None): Result {
+    res := ctx.header_(label, true, opt)
+    if res.has(.Active) {
+        ctx.getLayout().indent += ctx.style.indent
+        ctx.idStack.push(ctx.lastId)
+    }
+    return res
+}
+
+fn (ctx: ^Context) endTreenode*() {
+    ctx.getLayout().indent -= ctx.style.indent
+    ctx.popId()
+}
+
+fn (ctx: ^Context) scrollbar(cnt: ^Container, b: ^Rect, cs: Vec2, hor: bool) {
+    if hor {
+        maxscroll := cs.x - b.w
+
+        if maxscroll > 0 && b.w > 0 {
+            var base, thumb: Rect
+
+            id := ctx.getIdFromStr("!scrollbarx")
+
+            base = b^
+            base.y = b.y + b.h;
+            base.h = ctx.style.scrollbarSize;
+
+            ctx.updateControl(id, base, .None);
+            if ctx.focus == id && ctx.mouseDown.has(.Left) {
+                cnt.scroll.x += ctx.mouseDelta.x * cs.x / base.w;
+            }
+
+            cnt.scroll.x = trunc(clamp(cnt.scroll.x, 0, maxscroll));
+
+            ctx.drawFrame(ctx, base, .ScrollBase);
+            thumb = base;
+            thumb.w = max(ctx.style.thumbSize, base.w * b.w / cs.x);
+            thumb.x += cnt.scroll.x * (base.w - thumb.w) / maxscroll;
+            ctx.drawFrame(ctx, thumb, .ScrollThumb);
+
+            if ctx.mouseOver(b^) { ctx.scrollTarget = cnt; }
+        } else {
+            cnt.scroll.x = 0;
+        }
+    } else {
+        maxscroll := cs.y - b.h
+
+        if maxscroll > 0 && b.h > 0 {
+            var base, thumb: Rect
+
+            id := ctx.getIdFromStr("!scrollbary")
+
+            base = b^
+            base.x = b.x + b.w;
+            base.w = ctx.style.scrollbarSize;
+
+            ctx.updateControl(id, base, .None);
+            if ctx.focus == id && ctx.mouseDown.has(.Left) {
+                cnt.scroll.y += ctx.mouseDelta.y * cs.y / base.h;
+            }
+
+            cnt.scroll.y = trunc(clamp(cnt.scroll.y, 0, maxscroll));
+
+            ctx.drawFrame(ctx, base, .ScrollBase);
+            thumb = base;
+            thumb.h = max(ctx.style.thumbSize, base.h * b.h / cs.y);
+            thumb.y += cnt.scroll.y * (base.h - thumb.h) / maxscroll;
+            ctx.drawFrame(ctx, thumb, .ScrollThumb);
+
+            if ctx.mouseOver(b^) { ctx.scrollTarget = cnt; }
+        } else {
+            cnt.scroll.y = 0;
+        }
+    }
+}
+
+fn (ctx: ^Context) scrollbars(cnt: ^Container, body: ^Rect) {
+    sz := ctx.style.scrollbarSize
+    cs := cnt.contentSize
+    cs.x += ctx.style.padding * 2
+    cs.y += ctx.style.padding * 2
+    ctx.pushClipRect(body^)
+
+    if cs.y > cnt.body.h { body.w -= sz }
+    if cs.x > cnt.body.w { body.h -= sz }
+
+    ctx.scrollbar(cnt, body, cs, true)
+    ctx.scrollbar(cnt, body, cs, false)
+
+    ctx.popClipRect()
+}
+
+fn (ctx: ^Context) pushContainerBody(cnt: ^Container, body: Rect, opt: Option) {
+    if !opt.has(.NoScroll) { ctx.scrollbars(cnt, &body) }
+    ctx.pushLayout(body.expanded(-ctx.style.padding), cnt.scroll)
+    cnt.body = body
+}
+
+fn (ctx: ^Context) beginRootContainer(cnt: ^Container) {
+    ctx.containerStack.push(cnt)
+    ctx.rootList.push(cnt)
+
+    cnt.head = ctx.pushJump(-1)
+
+    if cnt.rect.overlaps(ctx.mousePos) &&
+        (ctx.nextHoverRoot == null || cnt.zindex > ctx.nextHoverRoot.zindex) {
+        ctx.nextHoverRoot = cnt
+    }
+
+    ctx.clipStack.push(unclippedRect)
+}
+
+fn (ctx: ^Context) endRootContainer() {
+    cnt := ctx.getCurrentContainer()
+    cnt.tail = ctx.pushJump(-1)
+
+    j := ^JumpCommand(ctx.commandList[cnt.head])
+    std::assert(j != null)
+    j.dst = len(ctx.commandList)
+
+    ctx.popClipRect()
+    ctx.popContainer()
+}
+
+fn (ctx: ^Context) beginWindow*(title: str, rect: Rect, opt: Option = .None): Result {
+    id := ctx.getIdFromStr(title)
+    cnt := ctx.getContainer_(id, opt)
+    if cnt == null || !cnt.open { return .Nothing }
+    ctx.idStack.push(id)
+
+    if cnt.rect.w == 0 { cnt.rect = rect }
+    ctx.beginRootContainer(cnt)
+    body := cnt.rect
+    rect = body
+
+    ctx.setCursor(.Arrow)
+
+    if !opt.has(.NoFrame) { ctx.drawFrame(ctx, rect, .WindowBG) }
+
+    if !opt.has(.NoTitle) {
+        tr := rect
+        tr.h = ctx.style.titleHeight
+        ctx.drawFrame(ctx, tr, .TitleBG)
+
+        id := ctx.getIdFromStr("!title")
+        ctx.updateControl(id, tr, opt)
+        ctx.drawControlText(title, tr, .TitleText, opt)
+
+        if ctx.hover == id { ctx.setCursor(.Arrow) }
+        if id == ctx.focus && ctx.mouseDown.has(.Left) {
+            cnt.rect.x += ctx.mouseDelta.x
+            cnt.rect.y += ctx.mouseDelta.y
+        }
+
+        body.y += tr.h
+        body.h -= tr.h
+
+        if !opt.has(.NoClose) {
+            id := ctx.getIdFromStr("!close")
+            r := Rect { tr.x + tr.w - tr.h, tr.y, tr.h, tr.h }
+            tr.w -= r.w
+            ctx.drawIcon(.Close, r, ctx.style.getColor(.TitleText))
+            ctx.updateControl(id, r, opt)
+
+            if ctx.hover == id { ctx.setCursor(.Hand) }
+
+            if ctx.mousePressed.has(.Left) && id == ctx.focus { cnt.open = false }
+        }
+    }
+
+    ctx.pushContainerBody(cnt, body, opt)
+
+    if !opt.has(.NoResize) {
+        sz := ctx.style.titleHeight
+        id := ctx.getIdFromStr("!resize")
+        r  := Rect { rect.x + rect.w - sz, rect.y + rect.h - sz, sz, sz }
+        ctx.updateControl(id, r, opt)
+
+        if ctx.hover == id { ctx.setCursor(.Size) }
+
+        if id == ctx.focus && ctx.mouseDown.has(.Left) {
+            ctx.setCursor(.Size)
+            cnt.rect.w = max(96, cnt.rect.w + ctx.mouseDelta.x)
+            cnt.rect.h = max(64, cnt.rect.h + ctx.mouseDelta.y)
+        }
+    }
+
+    if opt.has(.AutoSize) {
+        r := ctx.getLayout().body
+        cnt.rect.w = cnt.contentSize.x + (cnt.rect.w - r.w)
+        cnt.rect.h = cnt.contentSize.y + (cnt.rect.h - r.h)
+    }
+
+    if opt.has(.Popup) &&
+       ctx.mousePressed.any() && ctx.hoverRoot != cnt { cnt.open = false }
+
+    ctx.pushClipRect(cnt.body)
+    return .Active
+}
+
+fn (ctx: ^Context) endWindow*() {
+    ctx.popClipRect()
+    ctx.endRootContainer()
+}
+
+fn (ctx: ^Context) openPopup*(name: str) {
+    cnt := ctx.getContainer(name)
+    ctx.nextHoverRoot = cnt
+    ctx.hoverRoot = ctx.nextHoverRoot
+
+    cnt.rect = { ctx.mousePos.x, ctx.mousePos.y, 1, 1 }
+    cnt.open = true
+    ctx.bringToFront(cnt)
+}
+
+fn (ctx: ^Context) beginPopup*(name: str): Result {
+    opt := optAnd(.Popup, .AutoSize, .NoResize, .NoScroll, .NoTitle, .Closed)
+    return ctx.beginWindow(name, {}, opt)
+}
+
+fn (ctx: ^Context) endPopup*() {
+    ctx.endWindow()
+}
+
+// vim: ts=4 sw=4 et nosmartindent

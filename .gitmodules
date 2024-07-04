@@ -1,0 +1,6 @@
+[submodule "src/umka"]
+	path = src/umka
+	url = https://github.com/vtereshkov/umka-lang
+[submodule "src/qoi"]
+	path = src/qoi
+	url = https://github.com/phoboslab/qoi

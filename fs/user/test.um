@@ -1,0 +1,39 @@
+import (
+    "tasks.um"
+)
+
+fn register*() {
+    tasks::createClass("Test", {
+        ctx.label("Hello, from task "+task.name)
+
+        ctx.layoutRow({86, -111, -1}, 0)
+        ctx.label("Test buttons 1:")
+        if ctx.button("Button 1") == .Submit {
+            printf("Submit button 1\n")
+        }
+        if ctx.button("Button 2") == .Submit {
+            printf("Submit button 2\n")
+        }
+        ctx.label("Test buttons 2:")
+        if ctx.button("Button 3") == .Submit {
+            printf("Submit button 3\n")
+        }
+        if ctx.button("Popup") == .Submit {
+            // ctx.openPopup("Test Popup")
+        }
+        /*
+        if ctx.beginPopup("Test Popup") {
+            if ctx.button("Hello") == .Submit {
+                printf("Submit Hello\n")
+            }
+            if ctx.button("World") == .Submit {
+                printf("Submit World\n")
+            }
+            ctx.endPopup()
+        }
+        */
+
+        return true
+    })
+}
+

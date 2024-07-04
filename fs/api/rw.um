@@ -1,0 +1,31 @@
+import ("std.um")
+
+fn api__writes8(data: []uint8, addr: ^void)
+fn api__reads8(addr: ^void, count: uint): ^[]uint8
+fn api__reads(addr: ^void, count: uint): str
+fn api__getaddr(addr: ^void): uint
+fn api__getptr(addr: uint): ^void
+
+fn getaddr*(addr: ^void): uint {
+    return api__getaddr(addr)
+}
+
+fn getptr*(addr: uint): ^void {
+    return api__getptr(addr)
+}
+
+fn writes8*(addr: ^void, data: []uint8) {
+    api__writes8(data, addr)
+}
+
+fn write*(addr: ^void, data: any) {
+    writes8(addr, std::tobytes(data))
+}
+
+fn reads8*(addr: ^void, count: uint): []uint8 {
+    return api__reads8(addr, count)^
+}
+
+fn reads*(addr: ^void, count: uint): str {
+    return api__reads(addr, count)
+}

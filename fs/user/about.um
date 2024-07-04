@@ -1,0 +1,30 @@
+import (
+    "tasks.um"
+)
+
+fn register*() {
+    tasks::createClass("About", {
+        if ctx.header("Umka OS") == .Active {
+            ctx.layoutRow({120, -1}, 20)
+            ctx.label("@skejeton")
+            ctx.label("(https://github.com/skejeton)")
+        }
+        if ctx.header("Umka") == .Active {
+            ctx.layoutRow({120, -1}, 20)
+            ctx.label("@vtereshkov")
+            ctx.label("(https://github.com/vtereshkov)")
+        }
+        if ctx.header("QOI") == .Active {
+            ctx.layoutRow({120, -1}, 20)
+            ctx.label("@phoboslab")
+            ctx.label("(https://github.com/phoboslab)")
+        }
+        if ctx.header("Umka MicroUI") == .Active {
+            ctx.layoutRow({120, -1}, 20)
+            ctx.label("@thacuber2a03")
+            ctx.label("(https://github.com/thacuber2a03)")
+        }
+        return true
+    })
+}
+

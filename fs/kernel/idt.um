@@ -1,0 +1,33 @@
+import (
+    "/api/asm.um"
+    "/api/rw.um"
+)
+
+type IdtEntry = struct {
+    offsetLow: uint16
+    selector: uint16
+    zero: uint8
+    kind: uint8
+    offsetHigh: uint16
+}
+
+var idt: [256]IdtEntry
+
+fn init*() {
+    printf("[IDT] Loading at %v (%x bytes)\n", &idt, sizeof(idt)-1)
+    asm::lidt(&idt, sizeof(idt)-1)
+}
+
+fn register*(entry: uint8, fnaddr: ^void) {
+    addr := rw::getaddr(fnaddr)
+
+    printf("[IDT] Registering entry %d at %x\n", entry, addr)
+
+    idt[entry] = {
+        offsetLow: addr & 0xFFFF,
+        selector: 0x08,
+        zero: 0,
+        kind: 0x8E,
+        offsetHigh: (addr >> 16) & 0xFFFF
+    }
+}

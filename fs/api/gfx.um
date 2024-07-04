@@ -1,0 +1,40 @@
+fn api__gfxSetColor(r, g, b, a: uint8)
+fn api__gfxDrawRect(x, y, w, h: int)
+fn api__gfxDrawClip(x, y, w, h: int)
+fn api__gfxDrawChar(x, y: int, c: char)
+fn api__gfxDrawBackground()
+fn api__gfxDrawIcon(x, y: int, c: char)
+fn api__gfxDims(w, h: ^int)
+fn api__gfxSwap()
+
+fn setColor*(r, g, b, a: uint8) {
+    api__gfxSetColor(r, g, b, a)
+}
+
+fn drawRect*(x, y, w, h: int) {
+    api__gfxDrawRect(x, y, w, h)
+}
+
+fn drawClip*(x, y, w, h: int) {
+    api__gfxDrawClip(x, y, w, h)
+}
+
+fn drawChar*(x, y: int, c: char) {
+    api__gfxDrawChar(x, y, c)
+}
+
+fn drawIcon*(x, y: int, c: char) {
+    api__gfxDrawIcon(x, y, c)
+}
+
+fn drawBackground*() {
+    api__gfxDrawBackground()
+}
+
+fn dims*(w, h: ^int) {
+    api__gfxDims(w, h)
+}
+
+fn swap*() {
+    api__gfxSwap()
+}

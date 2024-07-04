@@ -1,0 +1,16 @@
+import (
+   "std.um"
+)
+
+var symbols: map[str]^void
+
+fn register*(symbol: str, addr: ^void) {
+    symbols[symbol] = addr
+}
+
+fn get*(symbol: str): ^void {
+    if symbols[symbol] == null {
+        std::assert(false, "Symbol not found: " + symbol)
+    }
+    return symbols[symbol]
+}

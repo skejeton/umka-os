@@ -1,0 +1,40 @@
+import "std.um"
+
+type FSO* = [1]^void
+
+fn api__vfsHookFlush(to: std::File, handler: fn(data: ^void, size: uint))
+fn api__vfsRoot(): ^void
+fn api__vfsNext(of: ^void): ^void
+fn api__vfsChild(of: ^void): ^void
+fn api__vfsFSOOpen(fso: ^void): std::File
+fn api__vfsFSOName(fso: ^void): str
+
+fn hookFlush*(to: std::File, handler: fn(data: ^void, size: uint)) {
+    api__vfsHookFlush(to, handler)
+}
+
+fn root*(): FSO {
+    return {api__vfsRoot()}
+}
+
+fn (fso: ^FSO) valid*(): bool {
+    return fso[0] != null
+}
+
+fn (fso: ^FSO) next*(): FSO {
+    return {api__vfsNext(fso[0])}
+}
+
+fn (fso: ^FSO) child*(): FSO {
+    return {api__vfsChild(fso[0])}
+}
+
+fn (fso: ^FSO) open*(): std::File {
+    return api__vfsFSOOpen(fso[0])
+}
+
+fn (fso: ^FSO) name*(): str {
+    return api__vfsFSOName(fso[0])
+}
+
+

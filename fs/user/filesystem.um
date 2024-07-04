@@ -1,0 +1,35 @@
+import (
+    "tasks.um"
+    "/api/vfs.um"
+    "microui.um"
+)
+
+fn displayTree(ctx: ^microui::Context, node: vfs::FSO) {
+    ctx.layoutRow({-1}, 10)
+    if !node.child().valid() {
+        ctx.label(node.name())
+        return
+    }
+
+    ok := false
+    if (node.name() == "") {
+        ok = ctx.beginTreenode("/") == .Active
+    } else {
+        ok = ctx.beginTreenode(node.name()) == .Active
+    }
+
+    if ok {
+        for child := node.child(); child.valid(); child = child.next() {
+            displayTree(ctx, child)
+        }
+        ctx.endTreenode()
+    }
+}
+
+fn register*() {
+    tasks::createClass("Filesystem", {
+        root := vfs::root()
+        displayTree(ctx, root)
+        return true
+    })
+}

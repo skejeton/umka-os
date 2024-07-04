@@ -1,0 +1,50 @@
+import (
+    "/api/asm.um"
+)
+
+const (
+    masterCommand = 0x20
+    masterData = 0x21
+    slaveCommand = 0xA0
+    slaveData = 0xA1
+
+    icw1Icw4 = 0x01
+    icw1Init = 0x10
+    icw48086 = 0x01
+
+    masterIrqs = 0x20
+    slaveIrqs = 0x28
+    slavePin = 2
+)
+
+fn init*() {
+    asm::iowait()
+    asm::out8(masterCommand, icw1Init | icw1Icw4)
+    asm::iowait()
+    asm::out8(slaveCommand, icw1Init | icw1Icw4)
+    asm::iowait()
+    asm::out8(masterData, masterIrqs)
+    asm::iowait()
+    asm::out8(slaveData, slaveIrqs)
+    asm::iowait()
+    asm::out8(masterData, 1 << slavePin)
+    asm::iowait()
+    asm::out8(slaveData, slavePin)
+    asm::iowait()
+    asm::out8(masterData, icw48086)
+    asm::iowait()
+    asm::out8(slaveData, icw48086)
+}
+
+fn getMask*(): uint16 {
+    master := asm::in8(masterData)
+    slave := asm::in8(slaveData)
+    return (uint16(slave) << 8) | uint16(master)
+}
+
+fn setMask*(mask: uint16) {
+    master := mask & 0xFF
+    slave := mask >> 8
+    asm::out8(masterData, master)
+    asm::out8(slaveData, slave)
+}

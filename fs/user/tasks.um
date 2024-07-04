@@ -1,0 +1,77 @@
+import ("microui.um")
+
+type (
+    TaskFn* = fn(task: ^Task, ctx: ^microui::Context): bool
+
+    Task* = struct {
+        data: any
+        dead: bool
+        class: str
+        name: str
+        window: microui::Rect
+        task: TaskFn
+        noClose: bool
+    }
+)
+
+var classes*: map[str]TaskFn
+
+var tasks*: map[int]Task
+
+var lastTaskId: int
+
+fn xorshift64(seed: uint): uint {
+    seed ~= seed << 13
+    seed ~= seed >> 7
+    seed ~= seed << 17
+    return seed
+}
+
+var seed: uint = 0x5794FA12
+
+fn rand*(): uint {
+    seed = xorshift64(seed)
+    return seed
+}
+
+fn createClass*(class: str, task: TaskFn) {
+    classes[class] = task
+}
+
+fn killTask*(id: int): bool {
+    if !validkey(tasks, id) {
+        return false
+    }
+
+    tasks = delete(tasks, id)
+    return true
+}
+
+fn createTask*(class: str, window: microui::Rect): int {
+    noClose := false
+    if len(tasks) == 0 {
+        noClose = true
+    }
+    lastTaskId++
+    tasks[lastTaskId] = {null, false, class, sprintf("%s (%d)", class, lastTaskId), window, classes[class], noClose}
+    return lastTaskId
+}
+
+fn doTasks*(ctx: ^microui::Context) {
+    for i, task^ in tasks {
+        flags := task.noClose ? microui::Option.NoClose : microui::Option.None
+        if ctx.beginWindow(task.name, task.window, flags) == .Active {
+            if !ctx.getCurrentContainer().open || !task.task(task, ctx) {
+                task.dead = true
+            }
+            ctx.endWindow()
+        }
+    }
+
+    for i, task in tasks {
+        if task.dead {
+            tasks = delete(tasks, i)
+        }
+    }
+}
+

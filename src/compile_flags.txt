@@ -1,0 +1,6 @@
+-I
+mock_libc
+-I
+umka/src
+-I
+qoi

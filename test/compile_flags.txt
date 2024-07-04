@@ -1,0 +1,2 @@
+-I../src/mock_libc
+-xc

@@ -1,0 +1,150 @@
+import (
+    "std.um"
+    "idt.um"
+    "pic.um"
+    "/api/asm.um"
+    "/api/sym.um"
+)
+
+type (
+    Packet* = any
+
+    MousePacket* = struct {
+        dx: int
+        dy: int
+        lmb: bool
+        rmb: bool
+        mmb: bool
+    }
+)
+
+const (
+    ps2cmd = 0x64
+    ps2data = 0x60
+
+    keyboardInt = 33
+    mouseInt = 44
+
+    keyboard = 1 << 1
+    slave = 1 << 2
+    mouse = 1 << 12
+)
+
+var (
+    packets: []Packet
+)
+
+fn mouseWaitWrite() {
+    for i := 0; i < 100000; i++ {
+        if asm::in8(ps2cmd) & 2 == 0 {
+            return
+        }
+    }
+
+    std::assert(false, "Mouse write timeout")
+}
+
+fn mouseWaitRead() {
+    for i := 0; i < 100000; i++ {
+        if asm::in8(ps2cmd) & 1 == 1 {
+            return
+        }
+    }
+
+    std::assert(false, "Mouse read timeout")
+}
+
+fn mouseWriteCmd(cmd: uint8) {
+    mouseWaitWrite()
+    asm::out8(ps2cmd, cmd)
+}
+
+fn mouseWrite(data: uint8) {
+    mouseWaitWrite()
+    asm::out8(ps2cmd, 0xD4)
+    mouseWaitWrite()
+    asm::out8(ps2data, data)
+}
+
+fn mouseRead(): uint8 {
+    mouseWaitRead()
+    return asm::in8(ps2data)
+}
+
+fn initMouse() {
+    mouseWriteCmd(0xA8) // A8h - Enable
+    mouseWriteCmd(0x20) // 20h - Get config
+    mouseWaitRead()
+    status := asm::in8(ps2data) | 2 // Enable IRQ bit
+    mouseWriteCmd(0x60) // 60h - Set config
+    mouseWaitWrite()
+    asm::out8(ps2data, status)
+    mouseWrite(0xF6) // Set defaults
+    mouseRead()
+    mouseWrite(0xF4) // Enable packets
+    mouseRead()
+}
+
+mouseCycle := 0
+mouseBytes := [3]uint8{0, 0, 0}
+fn handleMouseIrq(bytes: []uint8) {
+    for i, byte in bytes {
+        switch mouseCycle {
+            case 0:
+                if byte & 0x8 == 0 {
+                    break
+                }
+
+                mouseBytes[0] = byte
+                mouseCycle++
+            case 1:
+                mouseBytes[1] = byte
+                mouseCycle++
+            case 2:
+                mouseBytes[2] = byte
+                mouseCycle = 0
+
+                if (mouseBytes[0] & 0x80) > 0 || (mouseBytes[0] & 0x40) > 0 {
+                    break
+                }
+
+                dx := int16(mouseBytes[1]) - ((mouseBytes[0] << 4) & 0x100)
+                dy := int16(mouseBytes[2]) - ((mouseBytes[0] << 3) & 0x100)
+
+                packet := MousePacket{
+                    dx: dx,
+                    dy: dy,
+                    lmb: mouseBytes[0] & 1 > 0,
+                    rmb: mouseBytes[0] & 2 > 0,
+                    mmb: mouseBytes[0] & 4 > 0
+                }
+
+                packets = append(packets, packet)
+        }
+    }
+}
+
+fn init*() {
+    idt::register(keyboardInt, sym::get("irq1"))
+    idt::register(mouseInt, sym::get("irq12"))
+    idt::init()
+
+    initMouse()
+
+    pic::init()
+    pic::setMask(0xFFFF ~ (mouse | keyboard | slave))
+}
+
+fn irq*(irq: uint8, bytes: []uint8) {
+    switch irq {
+        case 12: handleMouseIrq(bytes)
+    }
+}
+
+fn relay*(f: fn(event: Packet)) {
+    for i, packet in packets {
+        f(packet)
+    }
+
+    packets = {}
+}

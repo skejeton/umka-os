@@ -1,0 +1,474 @@
+import (
+    "tasks.um"
+    "microui.um"
+    "std.um"
+)
+
+type Suit = enum {
+    hearts
+    diamonds
+    clubs
+    spades
+    count
+}
+
+type Value = enum {
+    ace
+    two
+    three
+    four
+    five
+    six
+    seven
+    eight
+    nine
+    ten
+    jack
+    queen
+    king
+    count
+}
+
+type Card = struct {
+    suit: Suit
+    value: Value
+}
+
+type BlackjackInstance = struct {
+    firsthit: bool
+    insured: bool
+    over: bool
+    forfeited: bool
+    betReal: real
+    bet: int
+    rules: bool
+    reveal: bool
+    started: bool
+    deck: [52]Card
+    dealer: []^Card
+    player: []^Card
+    hand: []^Card
+    stash: []^Card
+}
+
+fn generateDeck(): [52]Card {
+    var deck: [52]Card
+    index := 0
+
+    for i := 0; i < int(Suit.count); i++ {
+        for j := 0; j < int(Value.count); j++ {
+            deck[index] = Card{Suit(i), Value(j)}
+            index++
+        }
+    }
+
+    return deck
+}
+
+fn shuffleDeck(deck: [52]^Card) {
+    for i := 0; i < 52; i++ {
+        j := tasks::rand()%52
+        deck[i]^, deck[j]^ = deck[j]^, deck[i]^
+    }
+}
+
+fn putCard(ctx: ^microui::Context, card: Card, worth: int, hidden: bool = false) {
+    rect := ctx.layoutNext()
+    ctx.drawRect(rect, {255, 255, 255, 255})
+    if hidden {
+        ctx.drawText(ctx.style.font, "?", {rect.x, rect.y}, {0, 0, 255, 255})
+        return
+    }
+
+    name := ""
+    switch card.suit {
+        case .hearts: name = "hearts"
+        case .diamonds: name = "diamonds"
+        case .clubs: name = "clubs"
+        case .spades: name = "spades"
+    }
+
+    value := ""
+    switch card.value {
+        case .ace: value = "ace"
+        case .two: value = "two"
+        case .three: value = "three"
+        case .four: value = "four"
+        case .five: value = "five"
+        case .six: value = "six"
+        case .seven: value = "seven"
+        case .eight: value = "eight"
+        case .nine: value = "nine"
+        case .ten: value = "ten"
+        case .jack: value = "jack"
+        case .queen: value = "queen"
+        case .king: value = "king"
+    }
+
+    color := microui::Color{0, 0, 0, 255}
+    if card.suit == Suit.hearts || card.suit == Suit.diamonds {
+        color = {255, 0, 0, 255}
+    }
+
+    ctx.drawText(ctx.style.font, value, {rect.x, rect.y}, color)
+    ctx.drawText(ctx.style.font, "of", {rect.x, rect.y+8}, color)
+    ctx.drawText(ctx.style.font, name, {rect.x, rect.y+16}, color)
+    if worth == 0 {
+        ctx.drawText(ctx.style.font, "(+?)", {rect.x, rect.y+24}, color)
+    } else {
+        ctx.drawText(ctx.style.font, "(+"+std::itoa(worth)+")", {rect.x, rect.y+24}, color)
+    }
+}
+
+fn getValues(cards: []^Card): ([]int, int) {
+    var values: []int
+    sum := 0
+
+    for _, card in cards {
+        start := sum
+
+        switch card.value {
+            case .two: sum += 2
+            case .three: sum += 3
+            case .four: sum += 4
+            case .five: sum += 5
+            case .six: sum += 6
+            case .seven: sum += 7
+            case .eight: sum += 8
+            case .nine: sum += 9
+            case .ten: sum += 10
+            case .jack: sum += 10
+            case .queen: sum += 10
+            case .king: sum += 10
+        }
+
+        values = append(values, sum - start)
+    }
+
+    for i, card in cards {
+        if card.value == Value.ace {
+            if sum == 10 {
+                values[i] = 11 
+                sum += 11
+            } else if sum + 10 <= 21 {
+                values[i] = 10
+                sum += 10
+            } else {
+                values[i] = 1
+                sum += 1
+            }
+        }
+    }
+
+    return values, sum
+}
+
+fn drawCard(inst: ^BlackjackInstance): ^Card {
+    if len(inst.hand) == 0 {
+        inst.hand = inst.stash
+        inst.stash = {}
+        shuffleDeck(inst.hand)
+    }
+
+    card := inst.hand[0]
+    inst.hand = delete(inst.hand, 0)
+    inst.stash = append(inst.stash, card)
+    return card
+}
+
+
+fn drawRound(inst: ^BlackjackInstance) {
+    inst.firsthit = true
+    inst.insured = false
+    inst.over = false
+    inst.reveal = false
+    inst.forfeited = false
+    inst.dealer = {}
+    inst.player = {}
+    inst.dealer = append(inst.dealer, drawCard(inst))
+    inst.player = append(inst.player, drawCard(inst))
+    inst.dealer = append(inst.dealer, drawCard(inst))
+    inst.player = append(inst.player, drawCard(inst))
+}
+
+fn shouldHideDealersCard(inst: ^BlackjackInstance): bool {
+    _, dealerSum := getValues(inst.dealer)
+    _, playerSum := getValues(inst.player)
+
+    if dealerSum > 21 || playerSum >= 21 || inst.forfeited {
+        inst.reveal = true
+    }
+    return !inst.reveal
+}
+
+fn isGameOver(inst: ^BlackjackInstance): bool {
+    _, dealerSum := getValues(inst.dealer)
+    _, playerSum := getValues(inst.player)
+
+    return inst.forfeited || playerSum >= 21 || dealerSum > 21 || (inst.reveal && dealerSum >= 17)
+}
+
+fn determineStatus(inst: ^BlackjackInstance): str {
+    _, dealerSum := getValues(inst.dealer)
+    _, playerSum := getValues(inst.player)
+
+    if inst.forfeited {
+        return "Player forfeited"
+    }
+
+    if !inst.reveal {
+        return "Awaiting action"
+    }
+
+    if playerSum == dealerSum {
+        return "Draw"
+    }
+
+    if playerSum > 21 {
+        return "Player bust"
+    }
+
+    if dealerSum > 21 {
+        return "Dealer bust"
+    }
+
+    if playerSum == 21 && len(inst.player) == 2 {
+        return "Player blackjack"
+    }
+
+    if dealerSum == 21 && len(inst.dealer) == 2 {
+        return "Dealer blackjack"
+    }
+
+    if isGameOver(inst) {
+        if playerSum > dealerSum {
+            return "Player win"
+        }
+
+        if dealerSum > playerSum {
+            return "Dealer win"
+        }
+    }
+
+
+    return "Awaiting action"
+}
+
+fn stand(inst: ^BlackjackInstance) {
+    inst.reveal = true
+    _, dealerSum := getValues(inst.dealer)
+
+    if dealerSum < 17 {
+        inst.dealer = append(inst.dealer, drawCard(inst))
+        stand(inst)
+    }
+}
+
+fn hit(inst: ^BlackjackInstance) {
+    inst.player = append(inst.player, drawCard(inst))
+}
+
+fn whoWon(inst: ^BlackjackInstance): int {
+    if inst.forfeited {
+        return -1
+    }
+
+    _, dealerSum := getValues(inst.dealer)
+    _, playerSum := getValues(inst.player)
+
+    if playerSum == dealerSum {
+        return 0
+    }
+
+    if playerSum > 21 {
+        return -1
+    }
+
+    if dealerSum > 21 {
+        return 1
+    }
+
+    if playerSum == 21 {
+        return 1
+    }
+
+    if dealerSum == 21 {
+        return -1
+    }
+
+    if playerSum > dealerSum {
+        return 1
+    }
+
+    if dealerSum > playerSum {
+        return -1
+    }
+
+    return 0
+}
+
+rulestxt := "The goal of blackjack is to beat the dealer's hand without going over 21.\n"+
+            "The game starts by dealing two cards to the player and two cards to the dealer.\n"+
+            "Then, the game prompts the player to Hit or Stand. If the player chooses to Hit,\n"+
+            "the player gets another card. If the player chooses to Stand, the game moves to the\n"+
+            "dealer's turn. The dealer must hit until the sum of their cards is 17 or higher.\n"+
+            "The player or the dealer wins if their sum is higher than the opponent's sum without going over 21.\n"+
+            "If the player and the dealer have the same sum, it's a draw. If the player goes over 21, it's a bust.\n"+
+            "Aces have special rules: if you have a card of value 10 + an Ace, you automatically win (blackjack)\n"+
+            "If you have an Ace and the sum of your cards is 11 or 9 or less, the Ace is worth 10. Otherwise, it's worth 1.\n"+
+            "To memorize: the ace is worth 11 or 10 unless it would make the sum go over 21. The smallest value before going over.\n"+
+            "If the dealer has an Ace, you can choose to buy insurance, it costs half the bet, in that case, if the dealer has a blackjack, you get your bet back; otherwise, you only lose your insurance money.\n";
+
+balance := 1000
+
+fn register*() {
+    tasks::createClass("Blackjack", {
+        if inst := ^BlackjackInstance(task.data); inst == null {
+            task.data = BlackjackInstance{
+                deck: generateDeck(),
+                over: true
+            }
+            inst = ^BlackjackInstance(task.data)
+
+            for i, card^ in inst.deck {
+                inst.hand = append(inst.hand, card)
+            }
+            shuffleDeck(inst.hand)
+        }
+
+        inst := ^BlackjackInstance(task.data)
+
+        ctx.layoutRow({74, 70, 30, 50, 60, -1}, 20)
+        if ctx.button("New round") == .Submit {
+            if balance < 0 {
+                if inst.bet > 5 {
+                    inst.bet = 5
+                }
+            }
+            inst.rules = false
+            inst.started = true
+            balance -= inst.bet
+            drawRound(inst)
+        }
+
+        ctx.checkbox("Rules", &inst.rules)
+
+        if inst.rules {
+            ctx.text(rulestxt)
+            return true
+        }
+
+        if inst.started {
+            if !isGameOver(inst) {
+                if ctx.button("Hit") == .Submit {
+                    inst.firsthit = false
+                    hit(inst)
+                }
+                if ctx.button("Stand") == .Submit {
+                    inst.firsthit = false
+                    stand(inst)
+                }
+            } else {
+                ctx.button("Hit", .None, .NoInteract)
+                ctx.button("Stand", .None, .NoInteract) 
+            }
+
+            if !isGameOver(inst) && inst.firsthit {
+                if ctx.button("Double") == .Submit {
+                    hit(inst)
+                    balance -= inst.bet
+                    inst.bet *= 2
+                    if !isGameOver(inst) {
+                       stand(inst)
+                    }
+                }
+            } else {
+                ctx.button("Double", .None, .NoInteract) 
+            }
+
+            if inst.dealer[0].value == .ace && !isGameOver(inst) && !inst.insured {
+                if ctx.button("Insurance") == .Submit {
+                    balance -= inst.bet/2
+                    _, dealerSum := getValues(inst.dealer)
+                    if dealerSum == 21 {
+                        inst.reveal = true
+                        balance += inst.bet
+                    }
+                    inst.insured = true
+                }
+            }
+        }
+
+        ctx.layoutRow({120, 120, 120}, 20)
+        if ctx.button("Forfeit") == .Submit {
+            if !isGameOver(inst) {
+                inst.forfeited = true
+            }
+        }
+        ctx.label("Balance $"+std::itoa(balance))
+        if !inst.started || isGameOver(inst) {
+            if balance < 10 {
+                ctx.slider(&inst.betReal, 5, 10, 5, "Bet $%g")
+            } else {
+                ctx.slider(&inst.betReal, 5, balance, 5, "Bet $%g")
+            }
+            if inst.over {
+                inst.bet = trunc(inst.betReal)
+            }
+        } else {
+            ctx.label("Bet $"+std::itoa(inst.bet))
+        }
+
+        if !inst.started {
+            return true
+        }
+
+        shouldHide := shouldHideDealersCard(inst)
+        dealerValues, dealerSum := getValues(inst.dealer)
+        ctx.layoutRow({-1}, 15)
+        if shouldHide {
+            if inst.dealer[0].value == .ace {
+                ctx.label("Dealer sum: ?+?")
+            } else {
+                ctx.label("Dealer sum: ?+"+std::itoa(dealerValues[0]))
+            }
+        } else {
+            ctx.label(sprintf("Dealer sum: %d", dealerSum))
+        }
+
+        ctx.layoutRow({62, 62, 62, 62, 62, 62}, 80)
+        for i := 0; i < len(inst.dealer); i++ {
+            if shouldHide && i == 0 && inst.dealer[0].value == .ace {
+                putCard(ctx, inst.dealer[i]^, 0)
+            } else if shouldHide && i == 1 {
+                putCard(ctx, inst.dealer[i]^, dealerValues[i], true)
+            } else {
+                putCard(ctx, inst.dealer[i]^, dealerValues[i])
+            }
+        }
+        playerValues, playerSum := getValues(inst.player)
+        ctx.layoutRow({-1}, 15)
+        ctx.label(sprintf("Player sum: %d", playerSum))
+        ctx.layoutRow({62, 62, 62, 62, 62, 62}, 80)
+        for i := 0; i < len(inst.player); i++ {
+            putCard(ctx, inst.player[i]^, playerValues[i])
+        }
+        ctx.layoutRow({-1}, 15)
+        ctx.label("Status: "+determineStatus(inst)+", "+std::itoa(len(inst.hand))+" cards left in hand")
+
+        if isGameOver(inst) {
+            if !inst.over {
+                switch whoWon(inst) {
+                    case 1:
+                        balance += inst.bet*2
+                    case -1:
+                    case 0:
+                        balance += inst.bet
+                }
+                inst.over = true
+            }
+        }
+
+        return true
+    })
+}

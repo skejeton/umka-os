@@ -1,0 +1,28 @@
+import (
+    "api/sym.um"
+    "kernel/kernel.um"
+    "api/rw.um"
+)
+
+
+fn system__register*(name: str, addr: ^void) {
+    sym::register(name, addr)
+}
+
+fn api__setupTypePtr(i: int, t: ^void)
+fn system__init*() {
+    api__setupTypePtr(0, typeptr(uint8))
+    api__setupTypePtr(1, typeptr(uint16))
+    api__setupTypePtr(2, typeptr(uint32))
+    api__setupTypePtr(3, typeptr([]uint8))
+    kernel::init()
+}
+
+fn system__irq*(irq: uint8, data: ^void, count: uint) {
+    bytes := rw::reads8(data, count)
+    kernel::irq(irq, bytes)
+}
+
+fn system__schedule*() {
+    kernel::schedule()
+}

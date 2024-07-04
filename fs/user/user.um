@@ -1,0 +1,158 @@
+import (
+    "microui.um"
+    "tasks.um"
+    "console.um"
+    "about.um"
+    "progman.um"
+    "taskview.um"
+    "filesystem.um"
+    "blackjack.um"
+    "/kernel/input.um"
+    "/api/gfx.um"
+)
+
+var ctx: microui::Context
+
+var mouseX, mouseY: int
+
+fn init*() {
+    ctx.init()
+
+    ctx.textWidth = {
+        return len(text)*8
+    }
+
+    ctx.textHeight = {
+        return 8
+    }
+
+    console::register()
+    about::register()
+    progman::register()
+    taskview::register()
+    filesystem::register()
+    blackjack::register()
+    tasks::createTask("Progman", {50, 50, 400, 200})
+
+    var w, h: int
+    gfx::dims(&w, &h)
+    printf("Screen dimensions: %d by %d\n", w, h)
+}
+
+consoleText := ""
+
+fn drawConsole*() {
+    gfx::setColor(255, 255, 255, 255)
+    line := 0
+    column := 0
+
+    for i, c in consoleText {
+        if c == '\n' {
+            line += 1
+            column = 0
+        } else {
+            if column > 80 {
+                column = 0
+                line += 1
+            }
+            gfx::drawChar(column*8, line*8, c)
+            column += 1
+        }
+    }
+}
+
+fn output*(s: str) {
+    console::write(s)
+}
+
+wasLmb := false
+
+fn schedule*() {
+    tasks::rand()
+
+    var w, h: int
+    gfx::dims(&w, &h)
+
+    input::relay(|w, h| {
+        switch v := type(event) {
+            case input::MousePacket:
+                tasks::rand()
+                mouseX += v.dx
+                mouseY += -v.dy
+
+                if mouseX < 0 {
+                    mouseX = 0
+                }
+                if mouseY < 0 {
+                    mouseY = 0
+                }
+                if mouseX > w {
+                    mouseX = w
+                }
+                if mouseY > h {
+                    mouseY = h
+                }
+
+                if v.lmb && !wasLmb {
+                    ctx.input_mouseDown(mouseX, mouseY, .Left)
+                } else if wasLmb {
+                    ctx.input_mouseMove(mouseX, mouseY)
+                } else {
+                    ctx.input_mouseUp(mouseX, mouseY, .Left)
+                }
+                wasLmb = v.lmb
+
+        }
+    })
+
+    ctx.begin()
+
+    tasks::doTasks(&ctx)
+
+    gfx::setColor(32, 32, 127, 255)
+    gfx::drawRect(0, 0, w, h)
+    gfx::drawBackground()
+    
+    ctx.end()
+
+    cmd, idx := ctx.nextCommand()
+    for cmd != null {
+        switch v := type(cmd^) {
+            case microui::RectCommand: 
+                gfx::setColor(v.color.r, v.color.g, v.color.b, v.color.a)
+                gfx::drawRect(v.rect.x, v.rect.y, v.rect.w, v.rect.h)
+            case microui::TextCommand:
+                gfx::setColor(v.color.r, v.color.g, v.color.b, v.color.a)
+                for i := 0; i < len(v.text); i++ {
+                    gfx::drawChar(v.pos.x + i*8, v.pos.y, v.text[i])
+                }
+            case microui::IconCommand:
+                gfx::setColor(v.color.r, v.color.g, v.color.b, v.color.a)
+                v.rect.x = v.rect.x+(v.rect.w-12)/2
+                v.rect.y = v.rect.y+(v.rect.h-16)/2
+                switch v.id {
+                    case .Check:
+                        gfx::drawIcon(v.rect.x, v.rect.y, '\x01')
+                    case .Close:
+                        gfx::drawIcon(v.rect.x, v.rect.y, '\x04')
+                    case .Collapsed:
+                        gfx::drawIcon(v.rect.x, v.rect.y, '\x05')
+                    case .Expanded:
+                        gfx::drawIcon(v.rect.x, v.rect.y, '\x06')
+                    case .Max:
+                        gfx::drawIcon(v.rect.x, v.rect.y, '\x07')
+                }
+            case microui::ClipCommand:
+                gfx::drawClip(v.rect.x, v.rect.y, v.rect.w, v.rect.h)
+        }
+        cmd, idx = ctx.nextCommand(idx)
+    }
+
+    // draw mouse
+    gfx::setColor(255, 255, 255, 255)
+    gfx::drawIcon(mouseX, mouseY, '\x02')
+    gfx::setColor(0, 0, 0, 255)
+    gfx::drawIcon(mouseX, mouseY, '\x03')
+
+    gfx::swap()
+}

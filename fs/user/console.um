@@ -1,0 +1,32 @@
+import (
+    "tasks.um"
+)
+
+string := ""
+
+fn write*(text: str) {
+    string += text
+}
+
+fn register*() {
+    tasks::createClass("Console", {
+        ctx.layoutRow({-1}, 10)
+
+        lines := []str{}
+        s := ""
+        for i, c in string {
+            if (c == '\n') {
+                lines = append(lines, s)
+                s = ""
+            } else {
+                s += c
+            }
+        }
+
+        for i, line in lines {
+            ctx.label(line)
+        }
+        return true
+    })
+}
+

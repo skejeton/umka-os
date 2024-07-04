@@ -1,0 +1,26 @@
+import (
+    "std.um"
+    "input.um"
+    "/api/vfs.um"
+    "/api/rw.um"
+    "/user/user.um"
+)
+
+fn outputConsole(data: ^void, size: uint) {
+    user::output(rw::reads(data, size))
+}
+
+fn init*() {
+    vfs::hookFlush(std::stdout(), outputConsole)
+    vfs::hookFlush(std::stderr(), outputConsole)
+    input::init()
+    user::init()
+}
+
+fn irq*(irq: uint8, bytes: []uint8) {
+    input::irq(irq, bytes)
+}
+
+fn schedule*() {
+    user::schedule()
+}
