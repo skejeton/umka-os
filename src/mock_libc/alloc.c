@@ -73,7 +73,7 @@ void *allocatorAlloc(size_t size) {
     }
   }
 
-normal:
+normal:;
   MemNode *node =
       (MemNode *)(((char *)alloc.tail) + alloc.tail->size + sizeof(MemNode));
 

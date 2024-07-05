@@ -460,7 +460,7 @@ size_t fmtvprintf(RWStream *s, const char *fmt, va_list ap) {
         }
         fmt++;
       }
-    stop:
+    stop:;
 
       int width = 0;
       if (*fmt >= '0' && *fmt <= '9') {
