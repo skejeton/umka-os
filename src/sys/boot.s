@@ -270,3 +270,11 @@ vesa_mode_info_struct:
 
 %include "src/sys/lib.s"
 %include "src/sys/irq.s"
+
+section .beginbss
+global beginBSS
+beginBSS: 
+section .endbss
+global endBSS
+endBSS:
+

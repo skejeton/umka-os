@@ -1,6 +1,6 @@
 import ("std.um")
 
-fn api__writes8(data: []uint8, addr: ^void)
+fn api__writes8(addr: ^void, data: []uint8)
 fn api__reads8(addr: ^void, count: uint): ^[]uint8
 fn api__reads(addr: ^void, count: uint): str
 fn api__getaddr(addr: ^void): uint
@@ -15,7 +15,7 @@ fn getptr*(addr: uint): ^void {
 }
 
 fn writes8*(addr: ^void, data: []uint8) {
-    api__writes8(data, addr)
+    api__writes8(addr, data)
 }
 
 fn write*(addr: ^void, data: any) {

@@ -28,27 +28,28 @@ void warning(UmkaError *error) {
 ////////////////////////////////////////////////////////////////////////////////
 
 static void api__panic(UmkaStackSlot *p, UmkaStackSlot *r) {
-  panic("(Umka) %s\n", (char *)p[0].ptrVal);
+  panic("(Umka) %s\n", (char *)umkaGetParam(p, 0)->ptrVal);
 }
 
 static void api__asm_in8(UmkaStackSlot *p, UmkaStackSlot *r) {
   uint8_t result;
-  uint16_t port = p[0].uintVal;
+  uint16_t port = umkaGetParam(p, 0)->uintVal;
   asm volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
 
+  umkaGetResult(r)->uintVal = result;
   r->uintVal = result;
 }
 
 static void api__asm_out8(UmkaStackSlot *p, UmkaStackSlot *r) {
-  uint8_t val = p[0].uintVal;
-  uint16_t port = p[1].uintVal;
+  uint16_t port = umkaGetParam(p, 0)->uintVal;
+  uint8_t val = umkaGetParam(p, 1)->uintVal;
 
   asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
 static void api__asm_lidt(UmkaStackSlot *p, UmkaStackSlot *r) {
-  uint16_t limit = p[0].uintVal;
-  uint32_t base = p[1].uintVal;
+  uint32_t base = umkaGetParam(p, 0)->uintVal;
+  uint16_t limit = umkaGetParam(p, 1)->uintVal;
 
   struct {
     uint16_t limit;
@@ -62,47 +63,53 @@ static void api__asm_cli(UmkaStackSlot *p, UmkaStackSlot *r) { asm("cli"); }
 static void api__asm_sti(UmkaStackSlot *p, UmkaStackSlot *r) { asm("sti"); }
 
 static void api__setupTypePtr(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaTypes[p[1].uintVal] = p[0].ptrVal;
+  umkaTypes[umkaGetParam(p, 0)->uintVal] = umkaGetParam(p, 1)->ptrVal;
 }
 
 static void api__getaddr(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->uintVal = p[0].uintVal;
+  umkaGetResult(r)->uintVal = umkaGetParam(p, 0)->uintVal;
 }
 
 static void api__getptr(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->ptrVal = p[0].ptrVal;
+  umkaGetResult(r)->ptrVal = umkaGetParam(p, 0)->ptrVal;
 }
 
 static void api__writes8(UmkaStackSlot *p, UmkaStackSlot *r) {
-  memcpy(p[0].ptrVal, ((UmkaDynArray(uint8_t) *)(&p[1]))->data,
-         umkaGetDynArrayLen(&p[1]));
+  void *dest = umkaGetParam(p, 0)->ptrVal;
+  UmkaDynArray(uint8_t) *src = umkaGetParam(p, 1)->ptrVal;
+
+  memcpy(dest, src->data, umkaGetDynArrayLen(src));
 }
 
 static void api__reads8(UmkaStackSlot *p, UmkaStackSlot *r) {
-  size_t len = p[0].uintVal;
+  void *data = umkaGetParam(p, 0)->ptrVal;
+  size_t len = umkaGetParam(p, 1)->uintVal;
+
   UmkaDynArray(uint8_t) *dest =
       umkaAllocData(umka, sizeof(UmkaDynArray(uint8_t)), NULL);
-
   umkaMakeDynArray(umka, dest, umkaTypes[TYPE_UINT8ARRAY], len);
-  memcpy(dest->data, p[1].ptrVal, len);
 
-  r->ptrVal = dest;
+  memcpy(dest->data, data, len);
+
+  umkaGetResult(r)->ptrVal = dest;
 }
 
 static void api__reads(UmkaStackSlot *p, UmkaStackSlot *r) {
-  size_t len = p[0].uintVal;
-  static int i = 0;
+  void *data = umkaGetParam(p, 0)->ptrVal;
+  size_t len = umkaGetParam(p, 1)->uintVal;
 
   char *str = malloc(len + 1);
   memcpy(str, p[1].ptrVal, len);
   str[len] = '\0';
 
-  r->ptrVal = umkaMakeStr(umka, str);
+  umkaGetResult(r)->ptrVal = umkaMakeStr(umka, str);
+
   free(str);
 }
 
 static void api__gfxSetColor(UmkaStackSlot *p, UmkaStackSlot *r) {
-  gfxSetColor(p[3].intVal, p[2].intVal, p[1].intVal, p[0].intVal);
+  gfxSetColor(umkaGetParam(p, 0)->intVal, umkaGetParam(p, 1)->intVal,
+              umkaGetParam(p, 2)->intVal, umkaGetParam(p, 3)->intVal);
 }
 
 static void api__gfxDrawBackground(UmkaStackSlot *p, UmkaStackSlot *r) {
@@ -110,26 +117,30 @@ static void api__gfxDrawBackground(UmkaStackSlot *p, UmkaStackSlot *r) {
 }
 
 static void api__gfxDrawRect(UmkaStackSlot *p, UmkaStackSlot *r) {
-  gfxDrawRect(p[3].intVal, p[2].intVal, p[1].intVal, p[0].intVal);
+  gfxDrawRect(umkaGetParam(p, 0)->intVal, umkaGetParam(p, 1)->intVal,
+              umkaGetParam(p, 2)->intVal, umkaGetParam(p, 3)->intVal);
 }
 
 static void api__gfxDrawClip(UmkaStackSlot *p, UmkaStackSlot *r) {
-  gfxDrawClip(p[3].intVal, p[2].intVal, p[1].intVal, p[0].intVal);
+  gfxDrawClip(umkaGetParam(p, 0)->intVal, umkaGetParam(p, 1)->intVal,
+              umkaGetParam(p, 2)->intVal, umkaGetParam(p, 3)->intVal);
 }
 
 static void api__gfxDrawIcon(UmkaStackSlot *p, UmkaStackSlot *r) {
-  gfxDrawIcon(p[2].intVal, p[1].intVal, p[0].intVal);
+  gfxDrawIcon(umkaGetParam(p, 0)->intVal, umkaGetParam(p, 1)->intVal,
+              umkaGetParam(p, 2)->intVal);
 }
 
 static void api__gfxDrawChar(UmkaStackSlot *p, UmkaStackSlot *r) {
-  gfxDrawChar(p[2].intVal, p[1].intVal, p[0].intVal);
+  gfxDrawChar(umkaGetParam(p, 0)->intVal, umkaGetParam(p, 1)->intVal,
+              umkaGetParam(p, 2)->intVal);
 }
 
 static void api__gfxDims(UmkaStackSlot *p, UmkaStackSlot *r) {
   int w, h;
   gfxDims(&w, &h);
-  ((UmkaStackSlot *)p[1].ptrVal)->intVal = w;
-  ((UmkaStackSlot *)p[0].ptrVal)->intVal = h;
+  *(int *)umkaGetParam(p, 0)->ptrVal = w;
+  *(int *)umkaGetParam(p, 1)->ptrVal = h;
 }
 
 static void api__gfxSwap(UmkaStackSlot *p, UmkaStackSlot *r) { gfxSwap(); }
@@ -145,32 +156,30 @@ static void umka__flush(void *data, void *buf, size_t size) {
   }
 }
 
-static void api__testIndirect(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaCall(umka, p[0].intVal, 0, NULL, NULL);
-}
-
 static void api__vfsHookFlush(UmkaStackSlot *p, UmkaStackSlot *r) {
-  vfsHookFlush(p[2].ptrVal, p[0].ptrVal, umka__flush);
+  vfsHookFlush(umkaGetParam(p, 0)->ptrVal, umkaGetParam(p, 1)->ptrVal,
+               umka__flush);
 }
 
 static void api__vfsRoot(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->uintVal = (size_t)vfsRoot();
+  umkaGetResult(r)->ptrVal = vfsRoot();
 }
 
 static void api__vfsNext(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->uintVal = (size_t)vfsNext((FSO *)p[0].ptrVal);
+  umkaGetResult(r)->ptrVal = vfsNext((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 static void api__vfsChild(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->uintVal = (size_t)vfsChild((FSO *)p[0].ptrVal);
+  umkaGetResult(r)->ptrVal = vfsChild((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 static void api__vfsFSOName(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->ptrVal = umkaMakeStr(umka, vfsFSOName((FSO *)p[0].ptrVal));
+  umkaGetResult(r)->ptrVal =
+      umkaMakeStr(umka, vfsFSOName((FSO *)umkaGetParam(p, 0)->ptrVal));
 }
 
 static void api__vfsFSOOpen(UmkaStackSlot *p, UmkaStackSlot *r) {
-  r->ptrVal = vfsFSOName((FSO *)p[0].ptrVal);
+  umkaGetResult(r)->ptrVal = vfsFSOName((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -218,7 +227,6 @@ void umkaRuntimeCompile(const char *path) {
   umkaAddFunc(umka, "api__vfsFSOName", api__vfsFSOName);
   umkaAddFunc(umka, "api__vfsFSOOpen", api__vfsFSOOpen);
   umkaAddFunc(umka, "api__vfsHookFlush", api__vfsHookFlush);
-  umkaAddFunc(umka, "api__testIndirect", api__testIndirect);
 
   if (!umkaCompile(umka)) {
     umkaPrintError();

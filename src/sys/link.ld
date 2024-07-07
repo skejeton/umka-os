@@ -15,8 +15,16 @@ SECTIONS {
     {
         *(.rodata)
     }
+    .beginbss :
+    {
+        *(.beginbss)
+    }
     .bss : 
     {
         *(.bss)    
+    }
+    .endbss :
+    {
+        *(.endbss)
     }
 }

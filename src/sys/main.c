@@ -51,7 +51,12 @@ void handleIrq12() { umkaRuntimeHandleIRQ(12); }
 
 void __stack_chk_fail_local() {}
 
+extern uint8_t *beginBSS;
+extern uint8_t *endBSS;
+
 extern void kmain() {
+  memset(beginBSS, 0, endBSS - beginBSS);
+
   rtlInit((void *)0x1000000);
   loadVfsImage(_binary_bin_fs_bin_start, "");
   umkaRuntimeCompile("main.um");
