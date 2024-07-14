@@ -4,23 +4,35 @@ import (
     "microui.um"
 )
 
-fn displayTree(ctx: ^microui::Context, node: vfs::FSO) {
+fn displayTree(ctx: ^microui::Context, node: vfs::FSO, p: str) {
     ctx.layoutRow({-1}, 10)
     if !node.child().valid() {
+        ctx.layoutRow({200, 40}, 10)
         ctx.label(node.name())
+        n := node.name()
+        ctx.pushStr(n)
+        if n[len(n)-1] != 'i' {
+            if ctx.button("Open") == .Submit {
+                tasks::arg = p+n
+                tasks::createTask("Fileview", {60, 60, 400, 400})
+            }
+        }
+        ctx.popId()
         return
     }
 
     ok := false
     if (node.name() == "") {
         ok = ctx.beginTreenode("/") == .Active
+        p += "/"
     } else {
         ok = ctx.beginTreenode(node.name()) == .Active
+        p += node.name()+"/"
     }
 
     if ok {
         for child := node.child(); child.valid(); child = child.next() {
-            displayTree(ctx, child)
+            displayTree(ctx, child, p)
         }
         ctx.endTreenode()
     }
@@ -29,7 +41,7 @@ fn displayTree(ctx: ^microui::Context, node: vfs::FSO) {
 fn register*() {
     tasks::createClass("Filesystem", {
         root := vfs::root()
-        displayTree(ctx, root)
+        displayTree(ctx, root, "")
         return true
     })
 }

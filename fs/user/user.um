@@ -6,6 +6,7 @@ import (
     "progman.um"
     "taskview.um"
     "filesystem.um"
+    "fileview.um"
     "blackjack.um"
     "/kernel/input.um"
     "/api/gfx.um"
@@ -31,6 +32,7 @@ fn init*() {
     progman::register()
     taskview::register()
     filesystem::register()
+    fileview::register()
     blackjack::register()
     tasks::createTask("Progman", {50, 50, 400, 200})
 

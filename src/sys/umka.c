@@ -10,10 +10,10 @@ void panic(const char *fmt, ...);
 static void *umka;
 enum { TYPE_UINT8, TYPE_UINT16, TYPE_UINT32, TYPE_UINT8ARRAY };
 static void *umkaTypes[32];
-static int umkaRegisterFn;
-static int umkaInitFn;
-static int umkaIRQFn;
-static int umkaScheduleFn;
+UmkaFuncContext umkaRegisterFn;
+UmkaFuncContext umkaInitFn;
+UmkaFuncContext umkaIRQFn;
+UmkaFuncContext umkaScheduleFn;
 static _Atomic int umkaLock = 0;
 
 void umkaPrintError() {
@@ -36,7 +36,7 @@ static void api__asm_in8(UmkaStackSlot *p, UmkaStackSlot *r) {
   uint16_t port = umkaGetParam(p, 0)->uintVal;
   asm volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
 
-  umkaGetResult(r)->uintVal = result;
+  umkaGetResult(p, r)->uintVal = result;
   r->uintVal = result;
 }
 
@@ -67,11 +67,11 @@ static void api__setupTypePtr(UmkaStackSlot *p, UmkaStackSlot *r) {
 }
 
 static void api__getaddr(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->uintVal = umkaGetParam(p, 0)->uintVal;
+  umkaGetResult(p, r)->uintVal = umkaGetParam(p, 0)->uintVal;
 }
 
 static void api__getptr(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal = umkaGetParam(p, 0)->ptrVal;
+  umkaGetResult(p, r)->ptrVal = umkaGetParam(p, 0)->ptrVal;
 }
 
 static void api__writes8(UmkaStackSlot *p, UmkaStackSlot *r) {
@@ -91,7 +91,7 @@ static void api__reads8(UmkaStackSlot *p, UmkaStackSlot *r) {
 
   memcpy(dest->data, data, len);
 
-  umkaGetResult(r)->ptrVal = dest;
+  umkaGetResult(p, r)->ptrVal = dest;
 }
 
 static void api__reads(UmkaStackSlot *p, UmkaStackSlot *r) {
@@ -102,7 +102,7 @@ static void api__reads(UmkaStackSlot *p, UmkaStackSlot *r) {
   memcpy(str, p[1].ptrVal, len);
   str[len] = '\0';
 
-  umkaGetResult(r)->ptrVal = umkaMakeStr(umka, str);
+  umkaGetResult(p, r)->ptrVal = umkaMakeStr(umka, str);
 
   free(str);
 }
@@ -146,40 +146,43 @@ static void api__gfxDims(UmkaStackSlot *p, UmkaStackSlot *r) {
 static void api__gfxSwap(UmkaStackSlot *p, UmkaStackSlot *r) { gfxSwap(); }
 
 static void umka__flush(void *data, void *buf, size_t size) {
-  UmkaStackSlot slots[2] = {0};
-  slots[1].ptrVal = buf;
-  slots[0].uintVal = size;
-
-  umkaCall(umka, (size_t)data, 2, slots, NULL);
+  umkaCall(umka, (UmkaFuncContext *)data);
   if (!umkaAlive(umka)) {
     umkaPrintError();
   }
 }
 
 static void api__vfsHookFlush(UmkaStackSlot *p, UmkaStackSlot *r) {
-  vfsHookFlush(umkaGetParam(p, 0)->ptrVal, umkaGetParam(p, 1)->ptrVal,
-               umka__flush);
+  Stream *s = umkaGetParam(p, 0)->ptrVal;
+  int offs = ((UmkaClosure *)umkaGetParam(p, 1))->entryOffset;
+  void *callbackType = umkaGetParam(p, 2)->ptrVal;
+
+  UmkaFuncContext *ctx = calloc(1, sizeof(UmkaFuncContext));
+
+  umkaMakeFuncContext(umka, callbackType, offs, ctx);
+
+  vfsHookFlush(s, ctx, umka__flush);
 }
 
 static void api__vfsRoot(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal = vfsRoot();
+  umkaGetResult(p, r)->ptrVal = vfsRoot();
 }
 
 static void api__vfsNext(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal = vfsNext((FSO *)umkaGetParam(p, 0)->ptrVal);
+  umkaGetResult(p, r)->ptrVal = vfsNext((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 static void api__vfsChild(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal = vfsChild((FSO *)umkaGetParam(p, 0)->ptrVal);
+  umkaGetResult(p, r)->ptrVal = vfsChild((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 static void api__vfsFSOName(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal =
+  umkaGetResult(p, r)->ptrVal =
       umkaMakeStr(umka, vfsFSOName((FSO *)umkaGetParam(p, 0)->ptrVal));
 }
 
 static void api__vfsFSOOpen(UmkaStackSlot *p, UmkaStackSlot *r) {
-  umkaGetResult(r)->ptrVal = vfsFSOName((FSO *)umkaGetParam(p, 0)->ptrVal);
+  umkaGetResult(p, r)->ptrVal = vfsFSOName((FSO *)umkaGetParam(p, 0)->ptrVal);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -232,40 +235,35 @@ void umkaRuntimeCompile(const char *path) {
     umkaPrintError();
   }
 
-  umkaRegisterFn = umkaGetFunc(umka, NULL, "system__register");
-  if (umkaRegisterFn == -1) {
+  if (!umkaGetFunc(umka, NULL, "system__register", &umkaRegisterFn)) {
     panic("Function 'system__register' not found.");
   }
 
-  umkaInitFn = umkaGetFunc(umka, NULL, "system__init");
-  if (umkaInitFn == -1) {
+  if (!umkaGetFunc(umka, NULL, "system__init", &umkaInitFn)) {
     panic("Function 'system__init' not found.");
   }
 
-  umkaIRQFn = umkaGetFunc(umka, NULL, "system__irq");
-  if (umkaIRQFn == -1) {
+  if (!umkaGetFunc(umka, NULL, "system__irq", &umkaIRQFn)) {
     panic("Function 'system__irq' not found.");
   }
 
-  umkaScheduleFn = umkaGetFunc(umka, NULL, "system__schedule");
-  if (umkaScheduleFn == -1) {
+  if (!umkaGetFunc(umka, NULL, "system__schedule", &umkaScheduleFn)) {
     panic("Function 'system__schedule' not found.");
   }
 }
 
 void umkaRuntimeRegister(const char *name, void *addr) {
-  UmkaStackSlot params[2];
-  params[1].ptrVal = umkaMakeStr(umka, name);
-  params[0].ptrVal = addr;
+  umkaGetParam(umkaRegisterFn.params, 0)->ptrVal = umkaMakeStr(umka, name);
+  umkaGetParam(umkaRegisterFn.params, 1)->ptrVal = addr;
 
-  umkaCall(umka, umkaRegisterFn, 2, params, NULL);
+  umkaCall(umka, &umkaRegisterFn);
   if (!umkaAlive(umka)) {
     umkaPrintError();
   }
 }
 
 void umkaRuntimeInit() {
-  umkaCall(umka, umkaInitFn, 0, NULL, NULL);
+  umkaCall(umka, &umkaInitFn);
   if (!umkaAlive(umka)) {
     umkaPrintError();
   }
@@ -360,19 +358,17 @@ void umkaRuntimeSchedule() {
       continue;
     }
 
-    UmkaStackSlot p[3] = {0};
-    p[2].uintVal = packet.irq;
-    p[1].ptrVal = packet.bytes;
-    p[0].uintVal = packet.length;
-
-    umkaCall(umka, umkaIRQFn, 3, p, NULL);
+    umkaGetParam(umkaIRQFn.params, 0)->uintVal = packet.irq;
+    umkaGetParam(umkaIRQFn.params, 1)->ptrVal = packet.bytes;
+    umkaGetParam(umkaIRQFn.params, 2)->uintVal = packet.length;
+    umkaCall(umka, &umkaIRQFn);
 
     if (!umkaAlive(umka)) {
       umkaPrintError();
     }
   }
 
-  umkaCall(umka, umkaScheduleFn, 0, NULL, NULL);
+  umkaCall(umka, &umkaScheduleFn);
   if (!umkaAlive(umka)) {
     umkaPrintError();
   }

@@ -2,9 +2,24 @@ import (
     "tasks.um"
 )
 
+fn formatBytes*(bytes: int): str {
+  if bytes < 1024 {
+    return sprintf("%d B", bytes)
+  }
+  if bytes < 1024*1024 {
+    return sprintf("%.2f KB", real(bytes)/1024)
+  }
+  if bytes < 1024*1024*1024 {
+    return sprintf("%.2f MB", real(bytes)/(1024*1024))
+  }
+  return sprintf("%.2f GB", real(bytes)/(1024*1024*1024))
+}
+
 fn register*() {
     tasks::createClass("Taskview", {
         sw := ctx.getCurrentContainer().body.w - 100
+        ctx.layoutRow({-1}, 20)
+        ctx.label(sprintf("Memory usage: %s", formatBytes(memusage())))
         ctx.layoutRow({sw, -1}, 20)
         for i, task^ in tasks::tasks {
             ctx.pushId({i})

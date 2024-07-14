@@ -2,15 +2,16 @@ import "std.um"
 
 type FSO* = [1]^void
 
-fn api__vfsHookFlush(to: std::File, handler: fn(data: ^void, size: uint))
+type Callback = fn(data: ^void, size: uint)
+fn api__vfsHookFlush(to: std::File, handler: Callback, ty: ^void)
 fn api__vfsRoot(): ^void
 fn api__vfsNext(of: ^void): ^void
 fn api__vfsChild(of: ^void): ^void
 fn api__vfsFSOOpen(fso: ^void): std::File
 fn api__vfsFSOName(fso: ^void): str
 
-fn hookFlush*(to: std::File, handler: fn(data: ^void, size: uint)) {
-    api__vfsHookFlush(to, handler)
+fn hookFlush*(to: std::File, handler: Callback) {
+    api__vfsHookFlush(to, handler, typeptr(Callback))
 }
 
 fn root*(): FSO {

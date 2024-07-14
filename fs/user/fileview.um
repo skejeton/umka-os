@@ -1,0 +1,33 @@
+import (
+    "std.um"
+    "tasks.um"
+)
+
+type FileDat = struct {
+    s: str
+}
+
+fn register*() {
+    tasks::createClass("Fileview", {
+        if inst := ^FileDat(task.data); inst == null {
+            f, err := std::fopen(tasks::arg, "rb")
+            if err.code != 0 {
+                return false
+            }
+
+            d, err := std::freadall(f)
+            if err.code != 0 {
+                return false
+            }
+
+            task.data = &FileDat{str(d)}
+            std::fclose(f)
+        } else {
+            inst := ^FileDat(task.data)
+
+            ctx.text(inst.s)
+        }
+
+        return true
+    })
+}

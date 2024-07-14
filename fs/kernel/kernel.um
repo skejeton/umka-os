@@ -6,7 +6,7 @@ import (
     "/user/user.um"
 )
 
-fn outputConsole(data: ^void, size: uint) {
+fn outputConsole*(data: ^void, size: uint) {
     user::output(rw::reads(data, size))
 }
 
