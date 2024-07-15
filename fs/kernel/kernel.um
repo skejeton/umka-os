@@ -7,12 +7,25 @@ import (
 )
 
 fn outputConsole*(data: ^void, size: uint) {
-    user::output(rw::reads(data, size))
 }
 
 fn init*() {
-    vfs::hookFlush(std::stdout(), outputConsole)
-    vfs::hookFlush(std::stderr(), outputConsole)
+    upvalue := "cheese"
+
+    vfs::hookFlush(std::stdout(), |upvalue| {
+        s := rw::reads(data, size)
+        if s[0] == '\n' { user::output( sprintf(" [Upvalue %v]", upvalue) + s) } else { user::output(s) }
+    })
+
+    upvalue = "ham"
+
+    vfs::hookFlush(std::stderr(), |upvalue| {
+        s := rw::reads(data, size)
+        if s[0] == '\n' { user::output(sprintf(" [Upvalue %v]", upvalue) + s) } else { user::output(s) }
+    })
+
+
+    fprintf(std::stderr(), "Hello from stderr.\n")
     input::init()
     user::init()
 }
