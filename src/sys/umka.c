@@ -145,21 +145,15 @@ static void api__gfxDims(UmkaStackSlot *p, UmkaStackSlot *r) {
 
 static void api__gfxSwap(UmkaStackSlot *p, UmkaStackSlot *r) { gfxSwap(); }
 
-struct {
-  UmkaAny upvalue;
-  UmkaFuncContext ctx;
-} typedef UmkaClosureEx;
-
 static void umka__flush(void *data, void *buf, size_t size) {
-  UmkaClosureEx *clex = data;
+  UmkaFuncContext *ctx = data;
 
-  umkaGetParam(clex->ctx.params, 0)->ptrVal = buf;
-  umkaGetParam(clex->ctx.params, 1)->uintVal = size;
+  umkaGetParam(ctx->params, 0)->ptrVal = buf;
+  umkaGetParam(ctx->params, 1)->uintVal = size;
 
-  umkaIncRef(umka, clex->upvalue.data);
-  *umkaGetUpvalue(clex->ctx.params) = clex->upvalue;
+  umkaIncRef(umka, umkaGetUpvalue(ctx->params));
 
-  umkaCall(umka, &clex->ctx);
+  umkaCall(umka, ctx);
   if (!umkaAlive(umka)) {
     umkaPrintError();
   }
@@ -170,11 +164,11 @@ static void api__vfsHookFlush(UmkaStackSlot *p, UmkaStackSlot *r) {
   UmkaClosure *closure = (UmkaClosure *)umkaGetParam(p, 1);
   void *callbackType = umkaGetParam(p, 2)->ptrVal;
 
-  UmkaClosureEx *clex = calloc(1, sizeof(UmkaClosureEx));
-  umkaMakeFuncContext(umka, callbackType, closure->entryOffset, &clex->ctx);
-  clex->upvalue = closure->upvalue;
+  UmkaFuncContext *ctx = calloc(1, sizeof(UmkaFuncContext));
+  umkaMakeFuncContext(umka, callbackType, closure->entryOffset, ctx);
+  *umkaGetUpvalue(ctx->params) = closure->upvalue;
 
-  vfsHookFlush(s, clex, umka__flush);
+  vfsHookFlush(s, ctx, umka__flush);
 }
 
 static void api__vfsRoot(UmkaStackSlot *p, UmkaStackSlot *r) {
