@@ -151,7 +151,7 @@ static void umka__flush(void *data, void *buf, size_t size) {
   umkaGetParam(ctx->params, 0)->ptrVal = buf;
   umkaGetParam(ctx->params, 1)->uintVal = size;
 
-  umkaIncRef(umka, umkaGetUpvalue(ctx->params));
+  umkaIncRef(umka, umkaGetUpvalue(ctx->params)->data);
 
   umkaCall(umka, ctx);
   if (!umkaAlive(umka)) {
